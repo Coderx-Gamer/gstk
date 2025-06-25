@@ -1,5 +1,9 @@
 # Changelog
 
+## 2.0.2 - 2025-06-25
+### Fixed:
+- Call `DataStore.dispose()` after loading geopackage vector.
+
 ## 2.0.1 - 2025-06-25
 ### Fixed:
 - Removed `-t` from tile count options in the help menu.
