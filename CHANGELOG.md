@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.0.1 - 2025-06-25
+### Fixed:
+- Removed `-t` from tile count options in the help menu.
+- Punctuate CHANGELOG.md properly.
+
 ## 2.0.0 - 2025-06-25
 ### Added:
 - Geopackage support for downloading tiles into.
@@ -24,4 +29,4 @@
 - Help menu being displayed for non-CLI related errors.
 
 ## 1.0 - 2025-02-24
-- Initial release
+- Initial release.

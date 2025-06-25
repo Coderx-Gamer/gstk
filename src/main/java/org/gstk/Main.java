@@ -113,7 +113,7 @@ public class Main {
                 Fix (-f, --fix) options:
                   -u, --url           %s (optional)
                 
-                Tile count (-t, --tile-count) options:
+                Tile count (--tile-count) options:
                   No file parameter required
                 
                   -r, --region        %s

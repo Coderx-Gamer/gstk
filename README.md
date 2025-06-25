@@ -59,7 +59,7 @@ Download (-d, --download) options:
 Fix (-f, --fix) options:
   -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders) (optional)
 
-Tile count (-t, --tile-count) options:
+Tile count (--tile-count) options:
   No file parameter required
 
   -r, --region        Region polygon(s) (format: wkt|shapefile:<path or string>, geopackage:<table>@<path>)
