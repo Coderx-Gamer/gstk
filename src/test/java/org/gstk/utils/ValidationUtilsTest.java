@@ -5,20 +5,6 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ValidationUtilsTest {
     @Test
-    void testIsValidRegion() {
-        // Triangle around Los Angeles, CA
-        assertTrue(ValidationUtils.isValidRegion("34.096501,-118.314534;34.049519,-118.185870;34.008607,-118.286687"), "Triangle polygon");
-
-        // Not enough coordinates for polygons
-        assertFalse(ValidationUtils.isValidRegion("34.096501,-118.314534;34.049519,-118.185870"), "Two coordinates");
-        assertFalse(ValidationUtils.isValidRegion("34.096501,-118.314534"), "One coordinate");
-
-        assertFalse(ValidationUtils.isValidRegion("350.123,-200.123;-100.456,190.456;-91.789,-181.789"), "Out of range coordinates");
-
-        assertFalse(ValidationUtils.isValidRegion("invalid,coordinate;invalid,coordinate;invalid,coordinate"), "Invalid coordinate numbers");
-    }
-
-    @Test
     void testIsValidXyz() {
         assertTrue(ValidationUtils.isValidXyz("{z}/{x}/{y}"), "Standard coordinates");
 
@@ -46,17 +32,17 @@ class ValidationUtilsTest {
 
         assertFalse(ValidationUtils.isValidLayerName("Invalid Layer"), "Invalid layer name with spaces");
         assertFalse(ValidationUtils.isValidLayerName("InvalidLayer!"), "Invalid layer name with special characters");
-        assertFalse(ValidationUtils.isValidLayerName("All"), "Reserved layer name");
     }
 
     @Test
-    void testIsValidGisUrl() {
-        assertTrue(ValidationUtils.isValidGisUrl("https://www.examplegis.com/tile/{z}/{x}/{y}"), "Valid GIS URL");
+    void testIsValidTileUrl() {
+        assertTrue(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{z}/{x}/{y}"), "Valid GIS URL");
+        assertTrue(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{z}/{x}/{y}.png"), "Valid GIS URL with file extension");
 
-        assertFalse(ValidationUtils.isValidGisUrl("https://www.examplegis.com/tile/"), "GIS URL without coordinates");
-        assertFalse(ValidationUtils.isValidGisUrl("https://www.examplegis.com/tile/{x}/{x}/{y}"), "GIS URL with duplicate coordinates");
-        assertFalse(ValidationUtils.isValidGisUrl("https://www.examplegis.com/tile/{x}/{y}"), "GIS URL with only two coordinates");
-        assertFalse(ValidationUtils.isValidGisUrl("https://www.examplegis.com/tile/{z}/{x}/{y}/{y}"), "GIS URL with too many coordinates");
+        assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/"), "GIS URL without coordinates");
+        assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{x}/{x}/{y}"), "GIS URL with duplicate coordinates");
+        assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{x}/{y}"), "GIS URL with only two coordinates");
+        assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{z}/{x}/{y}/{y}"), "GIS URL with too many coordinates");
     }
 
     @Test

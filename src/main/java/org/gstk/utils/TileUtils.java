@@ -1,57 +1,167 @@
 package org.gstk.utils;
 
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Envelope;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.Polygon;
+import org.gstk.Constants;
+import org.gstk.Download;
+import org.gstk.model.Region;
+import org.locationtech.jts.geom.*;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public class TileUtils {
     /**
-     * Finds all tiles within a region of latitudes and longitudes at a zoom level.
-     * If the `region` polygon is left open (first entry is not equal to the last), the first is appended to the end.
+     * Finds all tiles within a `Region` at a zoom level.
      *
-     * @param region List of `org.locationtech.jts.geom.Coordinate` in decimal degree latitude and longitude format.
+     * @param region Object of `org.gstk.model.Region`.
      * @param zoom Tile zoom level.
-     * @return List of `Tile` within the region.
+     * @return Set of `Tile` within the region.
      */
-    public static List<Tile> findTilesInRegion(List<Coordinate> region, int zoom) {
-        List<Coordinate> regionCopy = new ArrayList<>(region);
-        if (!regionCopy.get(0).equals2D(regionCopy.get(regionCopy.size() - 1))) {
-            regionCopy.add(regionCopy.get(0));
+    public static Set<Tile> findTilesInRegion(Region region, int zoom) {
+        Set<Tile> tiles = new HashSet<>();
+
+        MultiPolygon polygons = region.polygons();
+        Polygon[] polygonArray = new Polygon[polygons.getNumGeometries()];
+
+        for (int i = 0; i < polygons.getNumGeometries(); i++) {
+            polygonArray[i] = (Polygon) polygons.getGeometryN(i);
         }
 
-        List<Coordinate> tileCoordinates = new ArrayList<>();
-        for (Coordinate coordinate : regionCopy) {
-            Tile tile = latLonToTile(coordinate.x, coordinate.y, zoom);
-            tileCoordinates.add(new Coordinate(tile.x, tile.y));
+        GeometryFactory gf = new GeometryFactory();
+        for (Polygon polygon : polygonArray) {
+            Polygon transformedPolygon = transformPolygon(polygon, gf, point -> {
+                Tile tile = latLonToTile(point.getY(), point.getX(), zoom);
+                return new Coordinate(tile.x(), tile.y());
+            });
+            tiles.addAll(findTilesInPolygon(transformedPolygon, zoom));
         }
 
-        Polygon regionPolygon = new GeometryFactory().createPolygon(tileCoordinates.toArray(new Coordinate[0]));
-
-        return findTilesInPolygon(regionPolygon, zoom);
+        return tiles;
     }
 
     /**
-     * Same as `downloadTile`, except if the download fails, `maxTries` of attempts are done.
+     * Multithreaded download of a tile list.
+     * Defaults to `downloadTiles` (single-threaded) if threads are set to 1.
      *
-     * @param tile A `Tile` object.
-     * @param url GIS server URL with placeholders.
-     * @param maxTries Number of attempts allowed if download fails.
+     * @param tiles List of `Tile` to download.
+     * @param url Tile server URL.
+     * @param layer Layer name for the failed download callback (can be null).
+     * @param threads Number of threads to use.
+     * @param maxTries Maximum number of download attempts (set to -1 for infinite).
      * @param delayMs Delay between download attempts in milliseconds.
-     * @return The image bytes.
-     * @throws IOException If `downloadTile` throws an exception.
+     * @param progressCallback `Download.ProgressCallback` object for updating progress (can be null).
+     * @param errorCallback `Download.ErrorCallback` object for logging failed downloads (can be null).
+     * @return Set of `org.geotools.geopkg.Tile` downloaded.
+     */
+    public static Set<org.geotools.geopkg.Tile> downloadTilesMultithread(List<Tile> tiles,
+                                                                         String url,
+                                                                         String layer,
+                                                                         int threads,
+                                                                         int maxTries,
+                                                                         int delayMs,
+                                                                         Download.ProgressCallback progressCallback,
+                                                                         Download.ErrorCallback errorCallback) {
+        if (tiles.isEmpty()) return ConcurrentHashMap.newKeySet();
+
+        if (threads == 1) {
+            return downloadTiles(tiles, url, layer, maxTries, delayMs, progressCallback, errorCallback);
+        }
+
+        Set<org.geotools.geopkg.Tile> downloadedTiles = ConcurrentHashMap.newKeySet();
+
+        int totalTiles = tiles.size();
+        int chunkSize = (int) Math.ceil((double) totalTiles / threads);
+
+        final ExecutorService executor = Executors.newFixedThreadPool(threads);
+        for (int i = 0; i < threads; i++) {
+            int start = i * chunkSize;
+            int end = Math.min(start + chunkSize, totalTiles);
+            if (start >= end) break;
+
+            List<Tile> tileChunk = tiles.subList(start, end);
+            executor.execute(() -> downloadedTiles.addAll(downloadTiles(tileChunk, url, layer, maxTries, delayMs, progressCallback, errorCallback)));
+        }
+
+        executor.shutdown();
+
+        try {
+            if (!executor.awaitTermination(Constants.EXECUTOR_TIMEOUT_HOURS, TimeUnit.HOURS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+        }
+
+        return downloadedTiles;
+    }
+
+    /**
+     * Single-threaded download of a tile list.
+     *
+     * @param tiles List of `Tile` to download.
+     * @param url Tile server URL.
+     * @param layer Layer name for the failed download callback (can be null).
+     * @param maxTries Maximum number of download attempts (set to -1 for infinite).
+     * @param delayMs Delay between download attempts in milliseconds.
+     * @param progressCallback `Download.ProgressCallback` object for updating progress (can be null).
+     * @param errorCallback `Download.ErrorCallback` object for logging failed downloads (can be null).
+     * @return Set of `org.geotools.geopkg.Tile` downloaded.
+     */
+    public static Set<org.geotools.geopkg.Tile> downloadTiles(List<Tile> tiles,
+                                                              String url,
+                                                              String layer,
+                                                              int maxTries,
+                                                              int delayMs,
+                                                              Download.ProgressCallback progressCallback,
+                                                              Download.ErrorCallback errorCallback) {
+        if (tiles.isEmpty()) return new HashSet<>();
+
+        Set<org.geotools.geopkg.Tile> downloadedTiles = new HashSet<>();
+
+        for (Tile tile : tiles) {
+            try {
+                byte[] image = downloadTileWithRetries(tile, url, maxTries, delayMs);
+                downloadedTiles.add(new org.geotools.geopkg.Tile(tile.zoom(), tile.x(), tile.y(), image));
+                if (progressCallback != null) {
+                    progressCallback.step();
+                }
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                if (errorCallback != null) {
+                    errorCallback.error(new Download.FailedTileDownload(tile, layer, url, e));
+                }
+            }
+        }
+
+        return downloadedTiles;
+    }
+
+    /**
+     * Download a tile from a tile server with retries.
+     *
+     * @param tile Tile to download.
+     * @param url Tile server URL.
+     * @param maxTries Maximum number of download attempts (set to -1 for infinite).
+     * @param delayMs Delay between download attempts in milliseconds.
+     * @return Byte array of downloaded image data.
+     * @throws IOException If `downloadTile` fails over `maxTries` attempts.
+     * @throws InterruptedException If `Thread.sleep` is interrupted.
      */
     public static byte[] downloadTileWithRetries(Tile tile, String url, int maxTries, int delayMs) throws IOException, InterruptedException {
         int tries = 0;
-        while (tries < maxTries) {
+        while (tries < maxTries || maxTries == -1) {
             try {
                 return downloadTile(tile, url);
             } catch (IOException e) {
@@ -63,7 +173,27 @@ public class TileUtils {
                 }
             }
         }
-        throw new IOException("Failed to throw downloadTile exception");
+        throw new IOException();
+    }
+
+    private static Polygon transformPolygon(Polygon polygon, GeometryFactory gf, Function<Coordinate, Coordinate> transformer) {
+        LinearRing shell = transformRing(polygon.getExteriorRing(), gf, transformer);
+
+        LinearRing[] holes = new LinearRing[polygon.getNumInteriorRing()];
+        for (int i = 0; i < polygon.getNumInteriorRing(); i++) {
+            holes[i] = transformRing(polygon.getInteriorRingN(i), gf, transformer);
+        }
+
+        return gf.createPolygon(shell, holes);
+    }
+
+    private static LinearRing transformRing(LinearRing ring, GeometryFactory gf, Function<Coordinate, Coordinate> transformer) {
+        Coordinate[] coordinates = ring.getCoordinates();
+        Coordinate[] transformed = new Coordinate[coordinates.length];
+        for (int i = 0; i < coordinates.length; i++) {
+            transformed[i] = transformer.apply(coordinates[i]);
+        }
+        return gf.createLinearRing(transformed);
     }
 
     private static Tile latLonToTile(double lat, double lon, int zoom) {
@@ -80,8 +210,8 @@ public class TileUtils {
         return new Tile(tileX, tileY, zoom);
     }
 
-    private static List<Tile> findTilesInPolygon(Polygon polygon, int zoom) {
-        List<Tile> tiles = new ArrayList<>();
+    private static Set<Tile> findTilesInPolygon(Polygon polygon, int zoom) {
+        Set<Tile> tiles = new HashSet<>();
 
         Envelope bounds = polygon.getEnvelopeInternal();
         int minX = (int) Math.floor(bounds.getMinX());
@@ -92,8 +222,9 @@ public class TileUtils {
         for (int x = minX; x <= maxX; x++) {
             for (int y = minY; y <= maxY; y++) {
                 Polygon tilePolygon = createTilePolygon(x, y);
+                Tile tile = new Tile(x, y, zoom);
                 if (polygon.intersects(tilePolygon)) {
-                    tiles.add(new Tile(x, y, zoom));
+                    tiles.add(tile);
                 }
             }
         }
@@ -107,7 +238,7 @@ public class TileUtils {
                 new Coordinate(x + 1, y),
                 new Coordinate(x + 1, y + 1),
                 new Coordinate(x, y + 1),
-                new Coordinate(x, y)
+                new Coordinate(x, y),
         };
         return new GeometryFactory().createPolygon(tileCoordinates);
     }
@@ -133,23 +264,24 @@ public class TileUtils {
             byte[] data = out.toByteArray();
             connection.disconnect();
 
-            if (!ImageUtils.isPng(data)) {
-                byte[] pngData = ImageUtils.convertBytesToPng(data);
-                if (pngData != null) {
-                    return pngData;
-                } else {
-                    throw new IOException("Failed to download tile, likely corrupted or invalid image");
-                }
-            }
             return data;
         }
     }
 
     private static String getTileUrl(Tile tile, String url) {
-        return url.replace("{x}", String.valueOf(tile.x))
-                  .replace("{y}", String.valueOf(tile.y))
-                  .replace("{z}", String.valueOf(tile.zoom));
+        return url.replace("{x}", String.valueOf(tile.x()))
+                  .replace("{y}", String.valueOf(tile.y()))
+                  .replace("{z}", String.valueOf(tile.zoom()));
     }
 
-    public record Tile(int x, int y, int zoom) {}
+    public record Tile(int x, int y, int zoom) {
+        @Override
+        public boolean equals(Object obj) {
+            if (obj instanceof Tile t) {
+                return t.x() == x && t.y() == y && t.zoom() == zoom;
+            } else {
+                return false;
+            }
+        }
+    }
 }

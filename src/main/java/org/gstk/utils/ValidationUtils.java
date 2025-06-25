@@ -4,30 +4,6 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 public class ValidationUtils {
-    public static boolean isValidRegion(String region) {
-        if (region == null || region.isEmpty()) {
-            return false;
-        }
-
-        if (!region.contains(";")) {
-            return false;
-        }
-
-        String[] parts = region.split(";");
-
-        if (parts.length < 3) {
-            return false;
-        }
-
-        for (String part : parts) {
-            if (!isValidCoordinate(part)) {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     public static boolean isValidXyz(String xyz) {
         if (xyz == null || xyz.isEmpty()) {
             return false;
@@ -88,10 +64,10 @@ public class ValidationUtils {
             return false;
         }
 
-        return layerName.matches("^[a-zA-Z0-9_]+$") && !layerName.equals("All");
+        return layerName.matches("^[a-zA-Z0-9_]+$");
     }
 
-    public static boolean isValidGisUrl(String url) {
+    public static boolean isValidTileUrl(String url) {
         if (url == null || url.isEmpty()) {
             return false;
         }
@@ -127,32 +103,6 @@ public class ValidationUtils {
         }
 
         return portInt >= 0 && portInt <= 65535;
-    }
-
-    private static boolean isValidCoordinate(String coordinate) {
-        if (coordinate.isEmpty()) {
-            return false;
-        }
-
-        if (!coordinate.contains(",")) {
-            return false;
-        }
-
-        String[] parts = coordinate.split(",");
-
-        if (parts.length != 2) {
-            return false;
-        }
-
-        double lat, lon;
-        try {
-            lat = Double.parseDouble(parts[0]);
-            lon = Double.parseDouble(parts[1]);
-        } catch (NumberFormatException e) {
-            return false;
-        }
-
-        return lat > -90.0 && lat < 90.0 && lon > -180.0 && lon < 180.0;
     }
 
     private static int countSubstrings(String str, String sub) {
