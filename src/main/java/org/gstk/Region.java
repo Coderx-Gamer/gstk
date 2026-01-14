@@ -1,4 +1,4 @@
-package org.gstk.model;
+package org.gstk;
 
 import org.geotools.api.data.*;
 import org.geotools.api.feature.simple.SimpleFeature;
@@ -6,13 +6,14 @@ import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.referencing.CRS;
-import org.gstk.exceptions.InvalidRegionException;
 import org.locationtech.jts.geom.Geometry;
 import org.locationtech.jts.geom.GeometryFactory;
 import org.locationtech.jts.geom.MultiPolygon;
 import org.locationtech.jts.geom.Polygon;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
@@ -23,9 +24,9 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import static org.gstk.Main.logger;
-
 public record Region(MultiPolygon polygons) {
+    public static final Logger LOGGER = LoggerFactory.getLogger(Region.class);
+
     public static Region fromWkt(String wkt) throws InvalidRegionException, ParseException {
         GeometryFactory gf = new GeometryFactory();
         WKTReader reader = new WKTReader(gf);
@@ -93,8 +94,8 @@ public record Region(MultiPolygon polygons) {
 
         Type type = switch (parts[0]) {
             case "wkt" -> Type.WKT;
-            case "shapefile" -> Type.SHAPEFILE;
-            case "geopackage" -> Type.GEOPACKAGE;
+            case "shp" -> Type.SHAPEFILE;
+            case "gpkg" -> Type.GEOPACKAGE;
             default -> throw new InvalidRegionException("Unknown region type for region string");
         };
 
@@ -125,7 +126,7 @@ public record Region(MultiPolygon polygons) {
                 throw new InvalidRegionException("Region must be in WGS 84 (EPSG:4326), you are using EPSG:" + crsCode);
             }
         } else {
-            logger.warn("You are using an unknown CRS, please ensure you are using WGS 84 (EPSG:4326) coordinates");
+            LOGGER.warn("You are using an unknown CRS, please ensure you are using WGS 84 (EPSG:4326) coordinates");
         }
 
         List<Polygon> polygonList = new ArrayList<>();
@@ -158,5 +159,11 @@ public record Region(MultiPolygon polygons) {
         WKT,
         SHAPEFILE,
         GEOPACKAGE,
+    }
+
+    public static class InvalidRegionException extends RuntimeException {
+        public InvalidRegionException(String message) {
+            super(message);
+        }
     }
 }

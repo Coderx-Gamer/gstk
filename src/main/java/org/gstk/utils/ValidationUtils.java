@@ -4,59 +4,37 @@ import java.net.URI;
 import java.net.URISyntaxException;
 
 public class ValidationUtils {
-    public static boolean isValidXyz(String xyz) {
-        if (xyz == null || xyz.isEmpty()) {
-            return false;
-        }
-
-        if (!xyz.contains("/")) {
-            return false;
-        }
-
-        String[] parts = xyz.split("/");
-
-        if (parts.length != 3) {
-            return false;
-        }
-
-        boolean xFound = false;
-        boolean yFound = false;
-        boolean zFound = false;
-        for (String part : parts) {
-            switch (part) {
-                case "{x}":
-                    if (xFound) {
-                        return false;
-                    }
-                    xFound = true;
-                    break;
-                case "{y}":
-                    if (yFound) {
-                        return false;
-                    }
-                    yFound = true;
-                    break;
-                case "{z}":
-                    if (zFound) {
-                        return false;
-                    }
-                    zFound = true;
-                    break;
+    public static void checkValidZoom(String zoom) throws InvalidZoomException {
+        try {
+            int zoomInt = Integer.parseInt(zoom);
+            if (zoomInt < 0) {
+                throw new InvalidZoomException(zoomInt, "Zoom is too low (below 0)");
             }
+            if (zoomInt > 30) {
+                throw new InvalidZoomException(zoomInt, "Zoom is too high (max is 30)");
+            }
+        } catch (NumberFormatException e) {
+            throw new InvalidZoomException(zoom, e);
         }
-
-        return xFound && yFound && zFound;
     }
 
-    public static boolean isValidZoom(String zoom) {
-        int zoomInt;
-        try {
-            zoomInt = Integer.parseInt(zoom);
-        } catch (NumberFormatException e) {
-            return false;
-        }
+    public static void checkValidZoomLevels(String startZoom, String endZoom) throws InvalidZoomException {
+        checkValidZoom(startZoom);
+        checkValidZoom(endZoom);
 
-        return zoomInt >= 0 && zoomInt <= 30;
+        try {
+            int startZoomInt = Integer.parseInt(startZoom);
+            int endZoomInt = Integer.parseInt(endZoom);
+
+            if (startZoomInt > endZoomInt) {
+                throw new InvalidZoomException(
+                    startZoomInt, endZoomInt,
+                    "Start zoom cannot be larger than end zoom"
+                );
+            }
+        } catch (NumberFormatException e) {
+            throw new InvalidZoomException(startZoom, endZoom, e);
+        }
     }
 
     public static boolean isValidLayerName(String layerName) {
@@ -81,9 +59,9 @@ public class ValidationUtils {
         }
 
         String cleanUrl = url
-                .replace("{x}", "0")
-                .replace("{y}", "0")
-                .replace("{z}", "0");
+            .replace("{x}", "0")
+            .replace("{y}", "0")
+            .replace("{z}", "0");
 
         try {
             new URI(cleanUrl);
@@ -92,17 +70,6 @@ public class ValidationUtils {
         }
 
         return true;
-    }
-
-    public static boolean isValidPort(String port) {
-        int portInt;
-        try {
-            portInt = Integer.parseInt(port);
-        } catch (NumberFormatException e) {
-            return false;
-        }
-
-        return portInt >= 0 && portInt <= 65535;
     }
 
     private static int countSubstrings(String str, String sub) {
@@ -135,5 +102,23 @@ public class ValidationUtils {
         }
 
         return count;
+    }
+
+    public static class InvalidZoomException extends RuntimeException {
+        public InvalidZoomException(int startZoom, int endZoom, String message) {
+            super(String.format("%s (zoom %d -> %d)", message, startZoom, endZoom));
+        }
+
+        public InvalidZoomException(String startZoom, String endZoom, Exception e) {
+            super(String.format("%s: %s (zoom %s -> %s)", e.getClass().getName(), e.getMessage(), startZoom, endZoom));
+        }
+
+        public InvalidZoomException(int zoom, String message) {
+            super(String.format("%s (zoom %d)", message, zoom));
+        }
+
+        public InvalidZoomException(String zoom, Exception e) {
+            super(String.format("%s: %s (zoom %s)", e.getClass().getName(), e.getMessage(), zoom));
+        }
     }
 }

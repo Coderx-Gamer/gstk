@@ -1,28 +1,30 @@
 package org.gstk.utils;
 
 import org.junit.jupiter.api.Test;
+
+import static org.gstk.utils.ValidationUtils.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class ValidationUtilsTest {
     @Test
-    void testIsValidXyz() {
-        assertTrue(ValidationUtils.isValidXyz("{z}/{x}/{y}"), "Standard coordinates");
+    void testCheckValidZoom() {
+        assertDoesNotThrow(() -> checkValidZoom("0"), "Zero value zoom");
+        assertDoesNotThrow(() -> checkValidZoom("5"), "In-range zoom");
+        assertDoesNotThrow(() -> checkValidZoom("25"), "High but in bounds zoom");
 
-        assertFalse(ValidationUtils.isValidXyz("{z}/{x}/{x}"), "Duplicate coordinates");
-        assertFalse(ValidationUtils.isValidXyz("{x}/{y}"), "Only two coordinates");
-        assertFalse(ValidationUtils.isValidXyz("{z}/{x}/{y}/{y}"), "Too many coordinates");
+        assertThrows(InvalidZoomException.class, () -> checkValidZoom("-1"), "Zoom too low");
+        assertThrows(InvalidZoomException.class, () -> checkValidZoom("100"), "Zoom too high");
 
-        assertFalse(ValidationUtils.isValidXyz("invalid"), "Nonsensical coordinates");
+        assertThrows(InvalidZoomException.class, () -> checkValidZoom("invalid"), "Not an integer");
+        assertThrows(InvalidZoomException.class, () -> checkValidZoom("2147483648"), "Too big to be an integer");
     }
 
     @Test
-    void testIsValidZoom() {
-        assertTrue(ValidationUtils.isValidZoom("5"), "In-range zoom");
+    void testCheckValidZoomLevels() {
+        assertDoesNotThrow(() -> checkValidZoomLevels("0", "0"), "Zero value zoom levels");
+        assertDoesNotThrow(() -> checkValidZoomLevels("0", "17"), "Valid example zoom range");
 
-        assertFalse(ValidationUtils.isValidZoom("-1"), "Negative zoom");
-        assertFalse(ValidationUtils.isValidZoom("100"), "Zoom too large");
-
-        assertFalse(ValidationUtils.isValidZoom("invalid"), "Nonsensical zoom");
+        assertThrows(InvalidZoomException.class, () -> checkValidZoomLevels("12", "9"), "Start bigger than end");
     }
 
     @Test
@@ -43,15 +45,5 @@ class ValidationUtilsTest {
         assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{x}/{x}/{y}"), "GIS URL with duplicate coordinates");
         assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{x}/{y}"), "GIS URL with only two coordinates");
         assertFalse(ValidationUtils.isValidTileUrl("https://www.examplegis.com/tile/{z}/{x}/{y}/{y}"), "GIS URL with too many coordinates");
-    }
-
-    @Test
-    void testIsValidPort() {
-        assertTrue(ValidationUtils.isValidPort("8080"), "Valid port");
-
-        assertFalse(ValidationUtils.isValidPort("-7000"), "Negative port");
-        assertFalse(ValidationUtils.isValidPort("72000"), "Port out of positive range");
-
-        assertFalse(ValidationUtils.isValidPort("invalid"), "Invalid port number");
     }
 }

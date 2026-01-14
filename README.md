@@ -1,9 +1,12 @@
 # GSTK (GIS Toolkit)
 
-GSTK is a lightweight Java CLI tool for downloading tiles from tile servers into a local geopackage. \
-The outputted geopackage contains a raster tile table of the downloaded region.
+GSTK is a lightweight Java CLI tool for downloading tiles from tile servers into a database. \
+The outputted database contains a raster tile table of the downloaded region.
 
-This tool is useful for using maps offline (e.g., in remote areas, where the internet is unreliable).
+This tool is useful for using maps offline (e.g., in remote areas, or where the internet is unreliable).
+
+Supported output databases:
+- GeoPackage (flag `--db gpkg:<table>@<file>`)
 
 ## Prerequisites
 
@@ -13,7 +16,7 @@ Before using GSTK, ensure you have the following installed:
 
 ## Building
 
-To build the jar file for this project, open up a terminal and run these commands:
+To build the executable jar file for this project, open up a terminal and run these commands:
 ```bash
 git clone https://github.com/Coderx-Gamer/gstk.git
 cd gstk
@@ -34,35 +37,34 @@ To see the current version, run `java -jar <gstk jar file> --version`.
 java -jar gstk.jar --help
 ```
 ```
-Usage: java -jar ... [options...] <geopackage>
+Usage: java -jar ... [options...]
 
 Options:
   -h, --help          Print this message
   -V, --version       Print the program version
 
 Mutually exclusive:
-  -d, --download      Download tiles to geopackage
-  -f, --fix           Fix failed tile downloads
-  --clear-errors      Clear all failed tile download errors from database
+  -d, --download      Download tiles to database
+  -f, --fix           Re-download failed tile downloads
   --tile-count        Calculate tile count in region
 
 Download (-d, --download) options:
-  -l, --layer         Table in geopackage to store to
-  -r, --region        Region polygon(s) (format: wkt|shapefile:<path or string>, geopackage:<table>@<path>)
+  -D  --db            Database to store tiles to (format: gpkg:layer@file)
+  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)
   -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)
+  -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
   -o, --override      Override existing tiles while downloading (default: false)
-  -t, --threads       Thread count for multithreaded downloading (default: all available)
+  -t, --threads       Thread count for multi-threaded downloading (default: 4)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)
 
 Fix (-f, --fix) options:
-  -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders) (optional)
+  -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
+  -D, --db            Database to store tiles to (format: gpkg:layer@file)
 
 Tile count (--tile-count) options:
-  No file parameter required
-
-  -r, --region        Region polygon(s) (format: wkt|shapefile:<path or string>, geopackage:<table>@<path>)
+  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)
@@ -77,59 +79,57 @@ Download a subset of Los Angeles, California to a geopackage with WKT:
 java -jar gstk.jar \
   --download \
   --region 'wkt:POLYGON ((-118.314534 34.096501, -118.185870 34.049519, -118.286687 34.008607, -118.314534 34.096501))' \
-  --layer 'ExampleGIS' \
   --url 'https://www.examplegis.com/tile/{z}/{x}/{y}' \
   --start-zoom 0 \
-  --end-zoom 18 \
-  los-angeles_0-18.gpkg
+  --end-zoom 17 \
+  --db gpkg:los_angeles@los-angeles_0-17.gpkg
 ```
 
 With a shapefile:
 ```bash
 java -jar gstk.jar \
   --download \
-  --region 'shapefile:los_angeles.shp' \
-  --layer 'ExampleGIS' \
+  --region 'shp:los_angeles.shp' \
   --url 'https://www.examplegis.com/tile/{z}/{x}/{y}' \
   --start-zoom 0 \
-  --end-zoom 18 \
-  los-angeles_0-18.gpkg
+  --end-zoom 17 \
+  --db gpkg:los_angeles@los-angeles_0-17.gpkg
 ```
 
 With a geopackage (vector):
 ```bash
 java -jar gstk.jar \
   --download \
-  --region 'geopackage:los_angeles@los_angeles.gpkg' \
-  --layer 'ExampleGIS' \
+  --region 'gpkg:los_angeles@los_angeles.gpkg' \
   --url 'https://www.examplegis.com/tile/{z}/{x}/{y}' \
   --start-zoom 0 \
-  --end-zoom 18 \
-  los-angeles_0-18.gpkg
+  --end-zoom 17 \
+  --db gpkg:los_angeles@los-angeles_0-17.gpkg
 ```
+
+After you start downloading, you will see progress bars for each zoom level and an ETA for their download time.
 
 All inputted regions must use WGS 84 (latitude/longitude). \
 When using WKT, longitude comes before latitude, and the first coordinates in a polygon must match the last coordinates to form a closed line string.
 
-If you try to re-download the same region into a geopackage you already downloaded into, it will say it saved zero tiles. \
-This is not a bug; it just means all the tiles were already present in the geopackage. \
-If you want to re-download the old tiles, use the `--override` flag, and it will replace already present tiles instead of skipping them.
+If you try to re-download the same region into a database you already downloaded into, it will say no tiles need to be downloaded. \
+This is not a bug; it just means all the tiles were already present in the database. \
+If you want to re-download the tiles, use the `--override` flag, and it will replace already present tiles instead of skipping them.
 
 The `--url` flag follows this specification: <https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames>
 
 ## Download Errors
 
-If while you're downloading a geopackage and one or more tiles fail to download, you can fix it by using the `--fix` option:
+If while you're downloading into a database and one or more tiles fail to download, you can fix it by using the `--fix` option:
 ```bash
-java -jar gstk.jar --fix los-angeles_0-18.gpkg
-```
+# Fix using default fails file gstk_failed_tiles.xml
+java -jar gstk.jar --fix
 
-If it returns an error for not having a URL to download from, or you want to re-download the broken tiles from a different URL,
-use the `--url` flag with a working tile URL.
+# If you changed --fails-file while using --download
+java -jar gstk.jar --fix --fails-file example_errors.xml
 
-If you can't re-download the tiles, you can clear the failed download log by using `--clear-errors`:
-```bash
-java -jar gstk.jar --clear-errors los-angeles_0-18.gpkg
+# Fix errors in a different database
+java -jar gstk.jar --fix --db gpkg:something_else@other.gpkg
 ```
 
 ## Calculating tile count in a region
@@ -138,7 +138,7 @@ If you want to calculate the number of tiles that would be downloaded in a given
 without actually downloading it, you can use the `--tile-count` option:
 
 ```bash
-java -jar gstk.jar --tile-count --start-zoom 0 --end-zoom 18 --region shapefile:los_angeles.shp
+java -jar gstk.jar --tile-count --start-zoom 0 --end-zoom 18 --region shp:los_angeles.shp
 ```
 
 Note that if you're using a large region and high `--end-zoom`, this calculation could take a while.

@@ -1,33 +1,21 @@
 package org.gstk;
 
-import me.tongfei.progressbar.ProgressBar;
-import me.tongfei.progressbar.ProgressBarBuilder;
-import me.tongfei.progressbar.ProgressBarStyle;
+import jakarta.xml.bind.JAXBException;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.Options;
-import org.geotools.api.referencing.FactoryException;
-import org.geotools.geopkg.GeoPackage;
-import org.geotools.geopkg.Tile;
-import org.geotools.geopkg.TileEntry;
-import org.gstk.model.Region;
-import org.gstk.utils.SQLUtils;
+import org.gstk.db.TileDB;
 import org.gstk.utils.TileUtils;
 import org.gstk.utils.ValidationUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.io.IOException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Scanner;
 
 public class Main {
-    public static final Logger logger = LoggerFactory.getLogger("GSTK");
+    public static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
     public static void main(String[] args) {
         Options options = createOptions();
@@ -37,8 +25,7 @@ public class Main {
 
         try {
             cmd = parser.parse(options, args);
-
-            if (cmd.hasOption("h")) {
+            if (cmd.getOptions().length == 0 || cmd.hasOption("h")) {
                 printHelp(options);
                 System.exit(0);
             }
@@ -48,33 +35,18 @@ public class Main {
                 System.exit(0);
             }
 
-            String geopackagePath = null;
-
-            if (!cmd.hasOption("tile-count")) {
-                List<String> indexedArgs = cmd.getArgList();
-                if (indexedArgs.size() != 1 || indexedArgs.get(0).isEmpty()) {
-                    logErrorAndExit("Missing or invalid geopackage file (index 0 parameter)", true);
-                } else {
-                    geopackagePath = indexedArgs.get(0);
-                }
-            }
-
-            if (!cmd.hasOption("d") && !cmd.hasOption("tile-count")) {
+            if (cmd.hasOption("d") || cmd.hasOption("tile-count")) {
                 try {
-                    assert geopackagePath != null;
-                    File file = new File(geopackagePath);
-                    if (!file.exists() || file.isDirectory()) throw new Exception();
-                } catch (Exception e) {
-                    logErrorAndExit("Invalid geopackage file: {}", false, geopackagePath);
+                    ValidationUtils.checkValidZoomLevels(cmd.getOptionValue("s"), cmd.getOptionValue("e"));
+                } catch (ValidationUtils.InvalidZoomException e) {
+                    logErrorAndExit("Invalid zoom levels", false, e);
                 }
             }
 
             if (cmd.hasOption("d")) {
-                processDownload(cmd, geopackagePath);
+                processDownload(cmd);
             } else if (cmd.hasOption("f")) {
-                processFix(cmd, geopackagePath);
-            } else if (cmd.hasOption("clear-errors")) {
-                processClearErrors(geopackagePath);
+                processFix(cmd);
             } else if (cmd.hasOption("tile-count")) {
                 processTileCount(cmd);
             } else {
@@ -87,57 +59,57 @@ public class Main {
 
     private static void printHelp(Options options) {
         System.out.printf(
-                """
-                Usage: java -jar ... [options...] <geopackage>
-                
-                Options:
-                  -h, --help          %s
-                  -V, --version       %s
-                
-                Mutually exclusive:
-                  -d, --download      %s
-                  -f, --fix           %s
-                  --clear-errors      %s
-                  --tile-count        %s
-                
-                Download (-d, --download) options:
-                  -l, --layer         %s
-                  -r, --region        %s
-                  -u, --url           %s
-                  -o, --override      %s
-                  -t, --threads       %s
-                
-                  -s, --start-zoom    %s
-                  -e, --end-zoom      %s
-                
-                Fix (-f, --fix) options:
-                  -u, --url           %s (optional)
-                
-                Tile count (--tile-count) options:
-                  No file parameter required
-                
-                  -r, --region        %s
-                
-                  -s, --start-zoom    %s
-                  -e, --end-zoom      %s
-                """,
-                options.getOption("h").getDescription(),
-                options.getOption("V").getDescription(),
-                options.getOption("d").getDescription(),
-                options.getOption("f").getDescription(),
-                options.getOption("clear-errors").getDescription(),
-                options.getOption("tile-count").getDescription(),
-                options.getOption("l").getDescription(),
-                options.getOption("r").getDescription(),
-                options.getOption("u").getDescription(),
-                options.getOption("o").getDescription(),
-                options.getOption("t").getDescription(),
-                options.getOption("s").getDescription(),
-                options.getOption("e").getDescription(),
-                options.getOption("u").getDescription(),
-                options.getOption("r").getDescription(),
-                options.getOption("s").getDescription(),
-                options.getOption("e").getDescription()
+            """
+            Usage: java -jar ... [options...]
+
+            Options:
+              -h, --help          %s
+              -V, --version       %s
+
+            Mutually exclusive:
+              -d, --download      %s
+              -f, --fix           %s
+              --tile-count        %s
+
+            Download (-d, --download) options:
+              -D  --db            %s
+              -r, --region        %s
+              -u, --url           %s
+              -F, --fails-file    %s
+              -o, --override      %s
+              -t, --threads       %s
+
+              -s, --start-zoom    %s
+              -e, --end-zoom      %s
+
+            Fix (-f, --fix) options:
+              -F, --fails-file    %s
+              -D, --db            %s
+
+            Tile count (--tile-count) options:
+              -r, --region        %s
+
+              -s, --start-zoom    %s
+              -e, --end-zoom      %s
+            """,
+            options.getOption("h").getDescription(),
+            options.getOption("V").getDescription(),
+            options.getOption("d").getDescription(),
+            options.getOption("f").getDescription(),
+            options.getOption("tile-count").getDescription(),
+            options.getOption("D").getDescription(),
+            options.getOption("r").getDescription(),
+            options.getOption("u").getDescription(),
+            options.getOption("F").getDescription(),
+            options.getOption("o").getDescription(),
+            options.getOption("t").getDescription(),
+            options.getOption("s").getDescription(),
+            options.getOption("e").getDescription(),
+            options.getOption("F").getDescription(),
+            options.getOption("D").getDescription(),
+            options.getOption("r").getDescription(),
+            options.getOption("s").getDescription(),
+            options.getOption("e").getDescription()
         );
     }
 
@@ -145,11 +117,11 @@ public class Main {
         System.out.println("GSTK " + Constants.PROJECT_VERSION);
     }
 
-    private static void processDownload(CommandLine cmd, String geopackagePath) {
-        if (!cmd.hasOption("l") ||
+    private static void processDownload(CommandLine cmd) {
+        if (!cmd.hasOption("D") ||
             !cmd.hasOption("r") ||
-            !cmd.hasOption("u")
-        ) {
+            !cmd.hasOption("u"))
+        {
             logErrorAndExit("Missing required download options", true);
         }
 
@@ -157,12 +129,12 @@ public class Main {
             logErrorAndExit("Missing required zoom level options (-s, --start-zoom and -e, --end-zoom)", true);
         }
 
-        String layer;
+        String dbId = cmd.getOptionValue("D");
         String url;
         boolean override = cmd.hasOption("o");
-        int threads = -1;
-        int startZoom;
-        int endZoom;
+        int threads = 4;
+        int startZoom = Integer.parseInt(cmd.getOptionValue("s"));
+        int endZoom = Integer.parseInt(cmd.getOptionValue("e"));
 
         String regionString = cmd.getOptionValue("r");
         Region region;
@@ -172,10 +144,6 @@ public class Main {
         } catch (Exception e) {
             logErrorAndExit("Invalid region: {}", false, e.getMessage());
             return;
-        }
-
-        if (!ValidationUtils.isValidLayerName(layer = cmd.getOptionValue("l"))) {
-            logErrorAndExit("Invalid layer name", true);
         }
 
         if (!ValidationUtils.isValidTileUrl(url = cmd.getOptionValue("u"))) {
@@ -189,147 +157,86 @@ public class Main {
                     throw new NumberFormatException();
                 }
                 if (threads > Runtime.getRuntime().availableProcessors()) {
-                    logger.warn("Thread count is greater than the number of available processors, lowering -t, --threads equal to or below {} is recommended",
-                            Runtime.getRuntime().availableProcessors());
+                    LOGGER.warn("Thread count is greater than the number of available processors, lowering -t, --threads equal to or below {} is recommended",
+                        Runtime.getRuntime().availableProcessors());
                 }
             } catch (NumberFormatException e) {
                 logErrorAndExit("Invalid thread count", true);
             }
         }
 
-        if (!ValidationUtils.isValidZoom(cmd.getOptionValue("s"))) {
-            logErrorAndExit("Invalid start zoom", true);
-            return;
-        } else {
-            startZoom = Integer.parseInt(cmd.getOptionValue("s"));
-        }
+        LOGGER.info("Opening database {}", dbId);
 
-        if (!ValidationUtils.isValidZoom(cmd.getOptionValue("e"))) {
-            logErrorAndExit("Invalid end zoom", true);
-            return;
-        } else {
-            endZoom = Integer.parseInt(cmd.getOptionValue("e"));
-        }
-
-        if (startZoom > endZoom) {
-            logErrorAndExit("Start zoom must be less than or equal to end zoom", false);
-        }
-
-        logger.info("Starting download...");
-        Download.startDownloading(region, layer, url, override, threads, startZoom, endZoom, geopackagePath);
-    }
-
-    private static void processFix(CommandLine cmd, String filename) throws SQLException, IOException, FactoryException {
-        String url = null;
-        if (cmd.hasOption("u")) {
-            url = cmd.getOptionValue("u");
-        }
-
-        String jdbcUrl = "jdbc:sqlite:" + filename;
-        try (Connection conn = DriverManager.getConnection(jdbcUrl)) {
-            List<Download.FailedTileDownload> fails = SQLUtils.getFailedTileDownloads(conn);
-            if (fails.isEmpty()) {
-                logger.info("No failed tile downloads to fix");
-                return;
+        TileDB db = null;
+        try {
+            db = TileDB.open(dbId);
+            db.init();
+            if (db.needsInitForZoomLevels()) {
+                db.initForZoomLevels(startZoom, endZoom);
             }
+        } catch (TileDB.InitException e) {
+            logErrorAndExit("Failed to open database", false, e);
+        } catch (Exception e) {
+            logErrorAndExit("Failed to initialize database", false, e);
+        }
+        assert db != null;
 
-            logger.info("Starting to fix tiles...");
-            try (GeoPackage gpkg = new GeoPackage(new File(filename))) {
-                TileEntry[] entries = new TileEntry[fails.size()];
+        if (!db.isConnected()) {
+            logErrorAndExit("Failed to connect to database", false);
+        }
 
-                int i = 0;
-                for (Download.FailedTileDownload fail : fails) {
-                    entries[i] = Download.initGeopackage(gpkg, fail.layer());
-                    Download.createTileMatrices(
-                            fail.layer(),
-                            entries[i],
-                            fail.tile().zoom(),
-                            fail.tile().zoom(),
-                            conn
-                    );
-                    i++;
-                }
+        File failsFile = getFailsFile(cmd, false);
+        Downloader downloader = new Downloader(db, region, url, threads, failsFile);
 
-                List<Download.FailedTileDownload> newFails = new ArrayList<>();
+        LOGGER.info("Beginning download...");
+        downloader.start(startZoom, endZoom, override);
+        db.close();
 
-                try (ProgressBar pb = new ProgressBarBuilder()
-                        .setInitialMax(fails.size())
-                        .setTaskName("Re-downloading tiles")
-                        .setStyle(ProgressBarStyle.ASCII)
-                        .build()
-                ) {
-                    for (Download.FailedTileDownload fail : fails) {
-                        try {
-                            String finalUrl = url != null ? url : fail.url();
-                            if (finalUrl == null) {
-                                logger.error("No URL to default to for tile (z: {}, x: {}, y: {}) (use -u, --url)",
-                                        fail.tile().zoom(), fail.tile().x(), fail.tile().y());
-                                return;
-                            }
-
-                            byte[] image = TileUtils.downloadTileWithRetries(
-                                    fail.tile(),
-                                    finalUrl,
-                                    Constants.TILE_DOWNLOAD_ATTEMPTS,
-                                    Constants.DOWNLOAD_RETRY_DELAY_MS
-                            );
-
-                            boolean addedTile = false;
-                            for (TileEntry entry : entries) {
-                                if (entry.getTableName().equals(fail.layer())) {
-                                    SQLUtils.updateTile(new Tile(
-                                            fail.tile().zoom(),
-                                            fail.tile().x(),
-                                            fail.tile().y(),
-                                            image
-                                    ), fail.layer(), conn);
-                                    addedTile = true;
-                                    break;
-                                }
-                            }
-
-                            if (!addedTile) throw new Exception("Could not find tile entry for layer \"" + fail.layer() + "\"");
-                            pb.step();
-                        } catch (Exception e) {
-                            if (e instanceof InterruptedException) {
-                                Thread.currentThread().interrupt();
-                            }
-                            Download.FailedTileDownload newFail = new Download.FailedTileDownload(
-                                    fail.tile(),
-                                    fail.layer(),
-                                    fail.url(),
-                                    e
-                            );
-                            newFails.add(newFail);
-                        }
-                    }
-                }
-
-                System.out.println();
-                SQLUtils.clearFailedTileDownloads(conn);
-                for (Download.FailedTileDownload fail : newFails) {
-                    Download.logFailedTileDownload(fail);
-                    SQLUtils.addFailedTileDownload(fail, conn);
-                }
-                if (!newFails.isEmpty()) System.out.println();
-
-                logger.info("Finished re-downloading {}/{} tiles", fails.size() - newFails.size(), fails.size());
-                logger.info("Failed downloads: {}", newFails.size());
-            }
+        LOGGER.info("Finished downloading tiles");
+        LOGGER.info("New failed tile downloads: {}", downloader.failedTileCount);
+        if (downloader.fails != null) {
+            LOGGER.info("Total failed tile downloads: {}", downloader.fails.fails.fails.size());
+        }
+        if ((downloader.fails != null && !downloader.fails.fails.fails.isEmpty()) ||
+            downloader.failedTileCount > 0)
+        {
+            LOGGER.info("To repair failed tile downloads, run java -jar ... --fix");
+            LOGGER.info("Failed tile download data is stored in {}", failsFile.getName());
         }
     }
 
-    private static void processClearErrors(String filename) throws SQLException {
-        String jdbcUrl = "jdbc:sqlite:" + filename;
-        try (Connection conn = DriverManager.getConnection(jdbcUrl)) {
-            List<Download.FailedTileDownload> fails = SQLUtils.getFailedTileDownloads(conn);
-            if (fails.isEmpty()) {
-                logger.info("No failed tile downloads to clear");
-                return;
+    private static void processFix(CommandLine cmd) {
+        File failsFile = getFailsFile(cmd, true);
+        String dbId = cmd.hasOption("D") ? cmd.getOptionValue("D") : "";
+
+        try {
+            FailedTiles failedTiles = new FailedTiles(failsFile, dbId);
+            if (!dbId.isEmpty() && !dbId.equals(failedTiles.dbId)) {
+                LOGGER.warn("The fails file database id does not match the command-line database id");
+                LOGGER.warn("You might accidentally write to the wrong database");
+                System.out.print("Continue? [Y/n]: ");
+
+                Scanner scanner = new Scanner(System.in);
+                String continueStr = scanner.nextLine().trim().toLowerCase();
+                boolean shouldContinue = continueStr.isEmpty() || continueStr.equals("y");
+
+                if (!shouldContinue) {
+                    System.exit(0);
+                }
+            }
+            if (dbId.isEmpty()) {
+                dbId = failedTiles.dbId;
             }
 
-            SQLUtils.clearFailedTileDownloads(conn);
-            logger.info("Cleared {} failed tile download error{} from database", fails.size(), fails.size() == 1 ? "" : "s");
+            TileDB db = TileDB.open(dbId);
+            Downloader downloader = new Downloader(db, null, null, 1, failsFile);
+
+            LOGGER.info("Starting repair...");
+            downloader.repair();
+        } catch (JAXBException e) {
+            logErrorAndExit("Failed to read fails file", false, e);
+        } catch (TileDB.InitException e) {
+            logErrorAndExit("Failed to open database {}", false, dbId, e);
         }
     }
 
@@ -353,35 +260,17 @@ public class Main {
             return;
         }
 
-        int startZoom;
-        int endZoom;
+        int startZoom = Integer.parseInt(cmd.getOptionValue("s"));
+        int endZoom = Integer.parseInt(cmd.getOptionValue("e"));
 
-        if (!ValidationUtils.isValidZoom(cmd.getOptionValue("s"))) {
-            logErrorAndExit("Invalid start zoom", true);
-            return;
-        } else {
-            startZoom = Integer.parseInt(cmd.getOptionValue("s"));
-        }
-
-        if (!ValidationUtils.isValidZoom(cmd.getOptionValue("e"))) {
-            logErrorAndExit("Invalid end zoom", true);
-            return;
-        } else {
-            endZoom = Integer.parseInt(cmd.getOptionValue("e"));
-        }
-
-        if (startZoom > endZoom) {
-            logErrorAndExit("Start zoom must be less than or equal to end zoom", false);
-        }
-
-        logger.info("Calculating tile count, this may take some time...");
+        LOGGER.info("Calculating tile count, this may take some time...");
 
         int tileCount = 0;
         for (int zoom = startZoom; zoom <= endZoom; zoom++) {
             tileCount += TileUtils.findTilesInRegion(region, zoom).size();
         }
 
-        logger.info("Tiles in region (zoom {}-{}): {}", startZoom, endZoom, tileCount);
+        LOGGER.info("Tiles in region (zoom {}-{}): {}", startZoom, endZoom, tileCount);
     }
 
     private static Options createOptions() {
@@ -391,25 +280,43 @@ public class Main {
         options.addOption("V", "version", false, "Print the program version");
 
         // Mutually exclusive base options
-        options.addOption("d", "download", false, "Download tiles to geopackage");
-        options.addOption("f", "fix", false, "Fix failed tile downloads");
-        options.addOption(null, "clear-errors", false, "Clear all failed tile download errors from database");
+        options.addOption("d", "download", false, "Download tiles to database");
+        options.addOption("f", "fix", false, "Re-download failed tile downloads");
         options.addOption(null, "tile-count", false, "Calculate tile count in region");
 
         // Download options
-        options.addOption("l", "layer", true, "Table in geopackage to store to");
-        options.addOption("r", "region", true, "Region polygon(s) (format: wkt|shapefile:<path or string>, geopackage:<table>@<path>)");
+        options.addOption("D", "db", true, "Database to store tiles to (format: gpkg:layer@file)");
         options.addOption("u", "url", true, "Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)");
         options.addOption("o", "override", false, "Override existing tiles while downloading (default: false)");
-        options.addOption("t", "threads", true, "Thread count for multithreaded downloading (default: all available)");
+        options.addOption("t", "threads", true, "Thread count for multi-threaded downloading (default: 4)");
+
+        // Common options
+        options.addOption("r", "region", true, "Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)");
         options.addOption("s", "start-zoom", true, "Start zoom level (0-30 inclusive)");
         options.addOption("e", "end-zoom", true, "End zoom level (0-30 inclusive)");
+        options.addOption("F", "fails-file", true, "File to store failed tile downloads to (default: gstk_failed_tiles.xml)");
 
         return options;
     }
 
+    private static File getFailsFile(CommandLine cmd, boolean cancelOnNotExists) {
+        String failsFilename = "gstk_failed_tiles.xml";
+        if (cmd.hasOption("F")) {
+            failsFilename = cmd.getOptionValue("F");
+        }
+        File failsFile = new File(failsFilename);
+        if (cancelOnNotExists && !failsFile.exists()) {
+            LOGGER.info("No failed tile downloads to fix");
+            System.exit(0);
+        }
+        if (!failsFile.canWrite() || !failsFile.canRead()) {
+            logErrorAndExit("Fails file {} has insufficient permissions", false, failsFilename);
+        }
+        return failsFile;
+    }
+
     private static void logErrorAndExit(String message, boolean printHelp, Object... args) {
-        logger.error(message, args);
+        LOGGER.error(message, args);
         if (printHelp) printHelp(createOptions());
         System.exit(1);
     }

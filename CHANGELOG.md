@@ -1,5 +1,32 @@
 # Changelog
 
+## Version format
+X.Y.Z
+- X: Major update
+- Y: Minor update
+- Z: Bug fix or small change
+
+## 3.0.0 - 2026-01-13
+### Added:
+- XML-based failed tile download storage.
+- More descriptive logging.
+- Checkstyle enforcer.
+
+### Removed:
+- --layer CLI option.
+- --clear-errors CLI option.
+- SQL-based failed tile download storage.
+
+### Changed:
+- Different output database format (--db).
+- Refactored code to be more extensible later.
+- Rewrote downloader.
+- All tiles for a zoom level are no longer all in memory before writing.
+- Default number of threads for a download is now 4.
+
+### Fixed:
+- Removed unused methods and tests.
+
 ## 2.0.2 - 2025-06-25
 ### Fixed:
 - Call `DataStore.dispose()` after loading geopackage vector.
