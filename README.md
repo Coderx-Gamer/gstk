@@ -7,6 +7,7 @@ This tool is useful for using maps offline (e.g., in remote areas, or where the 
 
 Supported output databases:
 - GeoPackage (flag `--db gpkg:<table>@<file>`)
+- MBTiles (flag `--db mbtiles:<file>`)
 
 ## Prerequisites
 
@@ -49,8 +50,8 @@ Mutually exclusive:
   --tile-count        Calculate tile count in region
 
 Download (-d, --download) options:
-  -D  --db            Database to store tiles to (format: gpkg:layer@file)
-  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)
+  -D  --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
+  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)
   -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)
   -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
   -o, --override      Override existing tiles while downloading (default: false)
@@ -61,10 +62,10 @@ Download (-d, --download) options:
 
 Fix (-f, --fix) options:
   -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
-  -D, --db            Database to store tiles to (format: gpkg:layer@file)
+  -D, --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
 
 Tile count (--tile-count) options:
-  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)
+  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)

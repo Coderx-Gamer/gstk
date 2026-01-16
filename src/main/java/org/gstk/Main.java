@@ -13,11 +13,28 @@ import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.util.Scanner;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
     public static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
+    public static AtomicBoolean normalExit = new AtomicBoolean(false);
+
     public static void main(String[] args) {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            if (!normalExit.get()) {
+                if (!Downloader.killFlag.get()) {
+                    LOGGER.info("Terminating program early...");
+                    Downloader.killFlag.set(true);
+                    try {
+                        Thread.sleep(4000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        }));
+
         Options options = createOptions();
 
         CommandLineParser parser = new DefaultParser();
@@ -27,11 +44,13 @@ public class Main {
             cmd = parser.parse(options, args);
             if (cmd.getOptions().length == 0 || cmd.hasOption("h")) {
                 printHelp(options);
+                normalExit.set(true);
                 System.exit(0);
             }
 
             if (cmd.hasOption("V")) {
                 printVersion();
+                normalExit.set(true);
                 System.exit(0);
             }
 
@@ -55,6 +74,8 @@ public class Main {
         } catch (Exception e) {
             logErrorAndExit("{}", false, e.getMessage());
         }
+
+        normalExit.set(!Downloader.killFlag.get());
     }
 
     private static void printHelp(Options options) {
@@ -171,8 +192,8 @@ public class Main {
         try {
             db = TileDB.open(dbId);
             db.init();
-            if (db.needsInitForZoomLevels()) {
-                db.initForZoomLevels(startZoom, endZoom);
+            if (db.needsAdvancedInit()) {
+                db.advancedInit(startZoom, endZoom, region);
             }
         } catch (TileDB.InitException e) {
             logErrorAndExit("Failed to open database", false, e);
@@ -192,13 +213,13 @@ public class Main {
         downloader.start(startZoom, endZoom, override);
         db.close();
 
-        LOGGER.info("Finished downloading tiles");
-        LOGGER.info("New failed tile downloads: {}", downloader.failedTileCount);
+        LOGGER.info("Finished downloading {} tiles", downloader.downloadedTileCount.get());
+        LOGGER.info("New failed tile downloads: {}", downloader.failedTileCount.get());
         if (downloader.fails != null) {
             LOGGER.info("Total failed tile downloads: {}", downloader.fails.fails.fails.size());
         }
         if ((downloader.fails != null && !downloader.fails.fails.fails.isEmpty()) ||
-            downloader.failedTileCount > 0)
+            downloader.failedTileCount.get() > 0)
         {
             LOGGER.info("To repair failed tile downloads, run java -jar ... --fix");
             LOGGER.info("Failed tile download data is stored in {}", failsFile.getName());
@@ -221,6 +242,7 @@ public class Main {
                 boolean shouldContinue = continueStr.isEmpty() || continueStr.equals("y");
 
                 if (!shouldContinue) {
+                    normalExit.set(true);
                     System.exit(0);
                 }
             }
@@ -285,13 +307,13 @@ public class Main {
         options.addOption(null, "tile-count", false, "Calculate tile count in region");
 
         // Download options
-        options.addOption("D", "db", true, "Database to store tiles to (format: gpkg:layer@file)");
+        options.addOption("D", "db", true, "Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)");
         options.addOption("u", "url", true, "Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)");
         options.addOption("o", "override", false, "Override existing tiles while downloading (default: false)");
         options.addOption("t", "threads", true, "Thread count for multi-threaded downloading (default: 4)");
 
         // Common options
-        options.addOption("r", "region", true, "Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<table>@<path>)");
+        options.addOption("r", "region", true, "Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)");
         options.addOption("s", "start-zoom", true, "Start zoom level (0-30 inclusive)");
         options.addOption("e", "end-zoom", true, "End zoom level (0-30 inclusive)");
         options.addOption("F", "fails-file", true, "File to store failed tile downloads to (default: gstk_failed_tiles.xml)");
@@ -307,9 +329,10 @@ public class Main {
         File failsFile = new File(failsFilename);
         if (cancelOnNotExists && !failsFile.exists()) {
             LOGGER.info("No failed tile downloads to fix");
+            normalExit.set(true);
             System.exit(0);
         }
-        if (!failsFile.canWrite() || !failsFile.canRead()) {
+        if (failsFile.exists() && (!failsFile.canRead() || !failsFile.canWrite())) {
             logErrorAndExit("Fails file {} has insufficient permissions", false, failsFilename);
         }
         return failsFile;
@@ -318,6 +341,8 @@ public class Main {
     private static void logErrorAndExit(String message, boolean printHelp, Object... args) {
         LOGGER.error(message, args);
         if (printHelp) printHelp(createOptions());
+
+        normalExit.set(true);
         System.exit(1);
     }
 }

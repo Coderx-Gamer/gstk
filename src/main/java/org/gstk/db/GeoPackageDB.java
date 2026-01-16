@@ -5,6 +5,7 @@ import org.geotools.geopkg.GeoPackage;
 import org.geotools.geopkg.TileEntry;
 import org.geotools.geopkg.TileMatrix;
 import org.geotools.referencing.CRS;
+import org.gstk.Region;
 import org.gstk.utils.TileUtils;
 import org.gstk.utils.ValidationUtils;
 
@@ -19,7 +20,6 @@ public class GeoPackageDB implements TileDB {
     private final File file;
     private final String layer;
 
-    private boolean connected;
     private final Connection conn;
     private GeoPackage gpkg = null;
 
@@ -40,7 +40,12 @@ public class GeoPackageDB implements TileDB {
         String jdbcUrl = "jdbc:sqlite:" + parts[1];
         try {
             conn = DriverManager.getConnection(jdbcUrl);
-            connected = !conn.isClosed();
+            if (conn == null || conn.isClosed()) {
+                throw new InitException("Failed to connect to database");
+            }
+            if (conn.isReadOnly()) {
+                throw new InitException("Database is read-only");
+            }
         } catch (SQLException e) {
             throw new InitException(e);
         }
@@ -50,10 +55,7 @@ public class GeoPackageDB implements TileDB {
     public void close() {
         try {
             conn.close();
-        } catch (Exception ignored) {
-        } finally {
-            connected = false;
-        }
+        } catch (Exception ignored) {}
     }
 
     @Override
@@ -63,7 +65,11 @@ public class GeoPackageDB implements TileDB {
 
     @Override
     public boolean isConnected() {
-        return connected;
+        try {
+            return conn != null && !conn.isClosed();
+        } catch (SQLException e) {
+            return false;
+        }
     }
 
     @Override
@@ -73,14 +79,12 @@ public class GeoPackageDB implements TileDB {
     }
 
     @Override
-    public boolean needsInitForZoomLevels() {
+    public boolean needsAdvancedInit() {
         return true;
     }
 
     @Override
-    public void initForZoomLevels(int startZoom, int endZoom) throws Exception {
-        TileDB.super.initForZoomLevels(startZoom, endZoom);
-
+    public void advancedInit(int startZoom, int endZoom, Region region) throws Exception {
         TileEntry entry;
         if (gpkg.tile(layer) == null) {
             entry = new TileEntry();
@@ -128,7 +132,7 @@ public class GeoPackageDB implements TileDB {
     }
 
     @Override
-    public boolean doesTileExist(int column, int row, int zoom) throws SQLException {
+    public boolean doesTileExist(int column, int row, int zoom) {
         String sql = "SELECT * FROM " + layer + " WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -138,6 +142,8 @@ public class GeoPackageDB implements TileDB {
 
             ResultSet rs = ps.executeQuery();
             return rs.next();
+        } catch (SQLException e) {
+            return false;
         }
     }
 

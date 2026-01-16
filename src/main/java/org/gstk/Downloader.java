@@ -14,11 +14,15 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.gstk.utils.TileUtils.*;
 
 public class Downloader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Downloader.class);
+
+    public static AtomicBoolean killFlag = new AtomicBoolean(false);
 
     private final TileDB db;
     private final Region region;
@@ -26,7 +30,8 @@ public class Downloader {
     private final int threadCount;
     public FailedTiles fails;
 
-    public int failedTileCount = 0;
+    public AtomicInteger downloadedTileCount = new AtomicInteger(0);
+    public AtomicInteger failedTileCount = new AtomicInteger(0);
 
     public Downloader(TileDB db, Region region, String tileUrl, int threadCount, File failedDownloadsFile) {
         this.db = db;
@@ -52,13 +57,7 @@ public class Downloader {
         for (int zoom = startZoom; zoom <= endZoom; zoom++) {
             List<TilePosition> tiles = new ArrayList<>(findTilesInRegion(region, zoom));
             if (!override) {
-                tiles.removeIf(tile -> {
-                    try {
-                        return db.doesTileExist(tile);
-                    } catch (SQLException e) {
-                        return true;
-                    }
-                });
+                tiles.removeIf(db::doesTileExist);
             }
             if (tiles.isEmpty()) {
                 LOGGER.info("No tiles need to be downloaded");
@@ -81,12 +80,14 @@ public class Downloader {
                         .build())
                     {
                         while (!executor.isTerminated() || !tilesToWrite.isEmpty()) {
+                            if (killFlag.get()) return;
                             TileData tile = tilesToWrite.poll(100, TimeUnit.MILLISECONDS);
                             if (tile != null) {
                                 try {
                                     db.storeTile(tile);
                                     pb.step();
-                                } catch (SQLException e) {
+                                    downloadedTileCount.incrementAndGet();
+                                } catch (Exception e) {
                                     logFailedTile(tile.pos(), FailedTiles.FailType.WRITE, e);
                                 }
                             }
@@ -103,6 +104,7 @@ public class Downloader {
                 executor.submit(() -> {
                     try {
                         for (TilePosition pos : chunk) {
+                            if (killFlag.get()) return;
                             try {
                                 TileData tile = downloadTileWithRetries(
                                     pos,
@@ -127,6 +129,10 @@ public class Downloader {
                     throw new IllegalStateException("Downloader threads did not terminate within 31 days");
                 }
                 consumer.join();
+                if (killFlag.get()) {
+                    db.close();
+                    System.exit(0);
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
@@ -150,6 +156,7 @@ public class Downloader {
             .build())
         {
             for (FailedTiles.Fail fail : fails.fails.fails) {
+                if (killFlag.get()) return;
                 TilePosition pos = new TilePosition(fail.x, fail.y, fail.zoom);
                 try {
                     TileData tile = downloadTileWithRetries(
@@ -168,8 +175,15 @@ public class Downloader {
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     break;
+                } catch (Exception e) {
+                    LOGGER.error("Unknown tile error", e);
                 }
             }
+        }
+
+        if (killFlag.get()) {
+            db.close();
+            System.exit(0);
         }
 
         if (fixedTiles < failedTiles) {
@@ -181,7 +195,7 @@ public class Downloader {
 
     private synchronized void logFailedTile(TilePosition pos, FailedTiles.FailType type, Exception e) {
         LOGGER.error("Failed to {} tile {}", type.name, pos, e);
-        failedTileCount++;
+        failedTileCount.incrementAndGet();
 
         if (fails != null) {
             fails.addFailedTile(pos.zoom(), pos.x(), pos.y(), type, tileUrl);

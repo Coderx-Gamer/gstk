@@ -2,6 +2,8 @@ package org.gstk.utils;
 
 import org.gstk.Region;
 import org.locationtech.jts.geom.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -13,6 +15,8 @@ import java.util.Set;
 import java.util.function.Function;
 
 public class TileUtils {
+    private static final Logger LOGGER = LoggerFactory.getLogger(TileUtils.class);
+
     public static Set<TilePosition> findTilesInRegion(Region region, int zoom) {
         Set<TilePosition> tiles = new HashSet<>();
 
@@ -154,6 +158,15 @@ public class TileUtils {
             }
             byte[] data = out.toByteArray();
             connection.disconnect();
+
+            if (!ImageUtils.isPng(data)) {
+                byte[] pngData = ImageUtils.convertBytesToPng(data);
+                if (pngData != null) {
+                    data = pngData;
+                } else {
+                    LOGGER.warn("Unable to convert non-png tile at {} to png", pos);
+                }
+            }
 
             return new TileData(pos, data);
         }
