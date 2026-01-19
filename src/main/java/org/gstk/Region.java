@@ -25,7 +25,7 @@ import java.util.List;
 import java.util.Map;
 
 public record Region(MultiPolygon polygons) {
-    public static final Logger LOGGER = LoggerFactory.getLogger(Region.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(Region.class);
 
     public static Region fromWkt(String wkt) throws InvalidRegionException, ParseException {
         GeometryFactory gf = new GeometryFactory();

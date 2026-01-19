@@ -6,7 +6,7 @@
 
     <groupId>org.gstk</groupId>
     <artifactId>gstk</artifactId>
-    <version>3.1.1</version>
+    <version>3.1.2</version>
 
     <properties>
         <geotools.version>34.1</geotools.version>

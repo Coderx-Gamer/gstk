@@ -1,6 +1,5 @@
 package org.gstk;
 
-import jakarta.xml.bind.JAXBException;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -12,19 +11,25 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
-import java.util.Scanner;
+import java.io.OutputStream;
+import java.io.PrintStream;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
-    public static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
+    private static final Logger LOGGER = LoggerFactory.getLogger(Main.class);
 
-    public static AtomicBoolean normalExit = new AtomicBoolean(false);
+    public static final AtomicBoolean normalExit = new AtomicBoolean(false);
 
     public static void main(String[] args) {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             if (!normalExit.get()) {
                 if (!Downloader.killFlag.get()) {
-                    LOGGER.info("Terminating program early...");
+                    System.out.println("Terminating program early...");
+
+                    // Don't print anything while cleaning up
+                    System.setOut(new PrintStream(OutputStream.nullOutputStream()));
+                    System.setErr(new PrintStream(OutputStream.nullOutputStream()));
+
                     Downloader.killFlag.set(true);
                     try {
                         Thread.sleep(4000);
@@ -221,42 +226,25 @@ public class Main {
         if ((downloader.fails != null && !downloader.fails.fails.fails.isEmpty()) ||
             downloader.failedTileCount.get() > 0)
         {
-            LOGGER.info("To repair failed tile downloads, run java -jar ... --fix");
+            LOGGER.info("To repair failed tile downloads, run java -jar ... --fix --db {}", dbId);
             LOGGER.info("Failed tile download data is stored in {}", failsFile.getName());
         }
     }
 
     private static void processFix(CommandLine cmd) {
+        if (!cmd.hasOption("D")) {
+            logErrorAndExit("Missing required database argument -D, --db", true);
+        }
+
         File failsFile = getFailsFile(cmd, true);
-        String dbId = cmd.hasOption("D") ? cmd.getOptionValue("D") : "";
+        String dbId = cmd.getOptionValue("D");
 
         try {
-            FailedTiles failedTiles = new FailedTiles(failsFile, dbId);
-            if (!dbId.isEmpty() && !dbId.equals(failedTiles.dbId)) {
-                LOGGER.warn("The fails file database id does not match the command-line database id");
-                LOGGER.warn("You might accidentally write to the wrong database");
-                System.out.print("Continue? [Y/n]: ");
-
-                Scanner scanner = new Scanner(System.in);
-                String continueStr = scanner.nextLine().trim().toLowerCase();
-                boolean shouldContinue = continueStr.isEmpty() || continueStr.equals("y");
-
-                if (!shouldContinue) {
-                    normalExit.set(true);
-                    System.exit(0);
-                }
-            }
-            if (dbId.isEmpty()) {
-                dbId = failedTiles.dbId;
-            }
-
             TileDB db = TileDB.open(dbId);
             Downloader downloader = new Downloader(db, null, null, 1, failsFile);
 
             LOGGER.info("Starting repair...");
             downloader.repair();
-        } catch (JAXBException e) {
-            logErrorAndExit("Failed to read fails file", false, e);
         } catch (TileDB.InitException e) {
             logErrorAndExit("Failed to open database {}", false, dbId, e);
         }
@@ -313,7 +301,7 @@ public class Main {
         options.addOption("t", "threads", true, "Thread count for multi-threaded downloading (default: 4)");
 
         // Common options
-        options.addOption("r", "region", true, "Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)");
+        options.addOption("r", "region", true, "Region polygon(s) (format: wkt:<string>, shp:<file>, gpkg:<layer>@<file>)");
         options.addOption("s", "start-zoom", true, "Start zoom level (0-30 inclusive)");
         options.addOption("e", "end-zoom", true, "End zoom level (0-30 inclusive)");
         options.addOption("F", "fails-file", true, "File to store failed tile downloads to (default: gstk_failed_tiles.xml)");

@@ -51,7 +51,7 @@ Mutually exclusive:
 
 Download (-d, --download) options:
   -D  --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
-  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)
+  -r, --region        Region polygon(s) (format: wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
   -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)
   -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
   -o, --override      Override existing tiles while downloading (default: false)
@@ -65,7 +65,7 @@ Fix (-f, --fix) options:
   -D, --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
 
 Tile count (--tile-count) options:
-  -r, --region        Region polygon(s) (format: wkt:<wkt string>, shp:<shp file>, gpkg:<layer>@<file>)
+  -r, --region        Region polygon(s) (format: wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)
@@ -124,13 +124,10 @@ The `--url` flag follows this specification: <https://wiki.openstreetmap.org/wik
 If while you're downloading into a database and one or more tiles fail to download, you can fix it by using the `--fix` option:
 ```bash
 # Fix using default fails file gstk_failed_tiles.xml
-java -jar gstk.jar --fix
+java -jar gstk.jar --fix --db gpkg:tiles@mytiles.gpkg
 
 # If you changed --fails-file while using --download
 java -jar gstk.jar --fix --fails-file example_errors.xml
-
-# Fix errors in a different database
-java -jar gstk.jar --fix --db gpkg:something_else@other.gpkg
 ```
 
 ## Calculating tile count in a region

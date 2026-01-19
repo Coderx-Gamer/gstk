@@ -17,9 +17,9 @@ public interface TileDB {
     ) throws Exception;
 
     void storeTile(TileData tile) throws Exception;
-    boolean doesTileExist(int column, int row, int zoom);
+    boolean doesTileExist(int column, int row, int zoom) throws Exception;
 
-    default boolean doesTileExist(TilePosition pos) {
+    default boolean doesTileExist(TilePosition pos) throws Exception {
         return doesTileExist(pos.x(), pos.y(), pos.zoom());
     }
 

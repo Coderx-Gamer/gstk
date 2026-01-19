@@ -6,6 +6,19 @@ X.Y.Z
 - Y: Minor update
 - Z: Bug fix or small change
 
+## 3.1.2 - 2026-01-19
+### Removed:
+- XML tag `<identifier>` from fails file
+
+### Changed:
+- Slightly tweaked CLI help menu
+
+### Fixed:
+- Incorrect MBTiles tile existence check
+- Printing of misleading error messages during termination
+- Silent error handling for tile existence checks
+- Incorrect Java visibility for some loggers
+
 ## 3.1.1 - 2026-01-19
 ### Fixed:
 - Single zoom layer can cancel entire download if no tiles need to be downloaded for it

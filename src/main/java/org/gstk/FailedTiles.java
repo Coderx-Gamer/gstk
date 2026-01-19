@@ -16,19 +16,14 @@ import java.util.List;
 
 public class FailedTiles {
     public final File file;
-    public String dbId;
     public Fails fails;
 
-    public FailedTiles(File file, String dbId) throws JAXBException {
+    public FailedTiles(File file) throws JAXBException {
         this.file = file;
-        this.dbId = dbId;
 
         fails = new Fails();
-        fails.identifier = dbId;
         fails.fails = new ArrayList<>();
         read();
-
-        this.dbId = fails.identifier;
     }
 
     public void addFailedTile(int zoom, int x, int y, FailType type, String url) {
@@ -61,9 +56,6 @@ public class FailedTiles {
     @XmlRootElement(name="fails")
     @XmlAccessorType(XmlAccessType.FIELD)
     public static class Fails {
-        @XmlElement(name="identifier")
-        public String identifier;
-
         @XmlElement(name="fail")
         public List<Fail> fails;
     }

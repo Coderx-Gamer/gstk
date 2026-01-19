@@ -129,7 +129,7 @@ public class MBTilesDB implements TileDB {
     }
 
     @Override
-    public boolean doesTileExist(int column, int row, int zoom) {
+    public boolean doesTileExist(int column, int row, int zoom) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
             """
             SELECT * FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?
@@ -137,12 +137,12 @@ public class MBTilesDB implements TileDB {
         {
             ps.setInt(1, zoom);
             ps.setInt(2, column);
-            ps.setInt(3, row);
+
+            int tmsRow = (1 << zoom) - 1 - row;
+            ps.setInt(3, tmsRow);
 
             ResultSet rs = ps.executeQuery();
             return rs.next();
-        } catch (SQLException e) {
-            return false;
         }
     }
 

@@ -22,7 +22,7 @@ import static org.gstk.utils.TileUtils.*;
 public class Downloader {
     private static final Logger LOGGER = LoggerFactory.getLogger(Downloader.class);
 
-    public static AtomicBoolean killFlag = new AtomicBoolean(false);
+    public static final AtomicBoolean killFlag = new AtomicBoolean(false);
 
     private final TileDB db;
     private final Region region;
@@ -30,8 +30,8 @@ public class Downloader {
     private final int threadCount;
     public FailedTiles fails;
 
-    public AtomicInteger downloadedTileCount = new AtomicInteger(0);
-    public AtomicInteger failedTileCount = new AtomicInteger(0);
+    public final AtomicInteger downloadedTileCount = new AtomicInteger(0);
+    public final AtomicInteger failedTileCount = new AtomicInteger(0);
 
     public Downloader(TileDB db, Region region, String tileUrl, int threadCount, File failedDownloadsFile) {
         this.db = db;
@@ -42,7 +42,7 @@ public class Downloader {
         fails = null;
         if (failedDownloadsFile != null) {
             try {
-                fails = new FailedTiles(failedDownloadsFile, db.getIdentifier());
+                fails = new FailedTiles(failedDownloadsFile);
             } catch (JAXBException e) {
                 LOGGER.error(
                     "Failed to read {} for failed tile downloads",
@@ -57,7 +57,14 @@ public class Downloader {
         for (int zoom = startZoom; zoom <= endZoom; zoom++) {
             List<TilePosition> tiles = new ArrayList<>(findTilesInRegion(region, zoom));
             if (!override) {
-                tiles.removeIf(db::doesTileExist);
+                tiles.removeIf(tile -> {
+                    try {
+                        return db.doesTileExist(tile);
+                    } catch (Exception e) {
+                        LOGGER.error("Failed to check if tile {} exists, assuming it does not exist", tile, e);
+                        return false;
+                    }
+                });
             }
             if (tiles.isEmpty()) {
                 LOGGER.info("Skipping zoom level {}, no tiles need to be downloaded", zoom);
@@ -197,7 +204,7 @@ public class Downloader {
         LOGGER.error("Failed to {} tile {}", type.name, pos, e);
         failedTileCount.incrementAndGet();
 
-        if (fails != null) {
+        if (fails != null && !killFlag.get()) {
             fails.addFailedTile(pos.zoom(), pos.x(), pos.y(), type, tileUrl);
             try {
                 fails.write();
