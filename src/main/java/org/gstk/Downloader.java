@@ -60,8 +60,8 @@ public class Downloader {
                 tiles.removeIf(db::doesTileExist);
             }
             if (tiles.isEmpty()) {
-                LOGGER.info("No tiles need to be downloaded");
-                return;
+                LOGGER.info("Skipping zoom level {}, no tiles need to be downloaded", zoom);
+                continue;
             }
             List<List<TilePosition>> tileChunks = tilesToChunks(tiles);
 

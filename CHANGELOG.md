@@ -6,6 +6,11 @@ X.Y.Z
 - Y: Minor update
 - Z: Bug fix or small change
 
+## 3.1.1 - 2026-01-19
+### Fixed:
+- Single zoom layer can cancel entire download if no tiles need to be downloaded for it
+- Call `DataStore.dispose()` after loading shapefile
+
 ## 3.1.0 - 2026-01-16
 ### Added:
 - Support for MBTiles output

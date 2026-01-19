@@ -61,6 +61,8 @@ public record Region(MultiPolygon polygons) {
         SimpleFeatureSource source = store.getFeatureSource();
 
         MultiPolygon polygons = collectPolygons(source);
+        store.dispose();
+
         return new Region(polygons);
     }
 
