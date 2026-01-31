@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -27,33 +28,42 @@ public class Downloader {
     private final TileDB db;
     private final Region region;
     private final String tileUrl;
+    private final Map<String, String> headers;
     private final int threadCount;
     public FailedTiles fails;
 
     public final AtomicInteger downloadedTileCount = new AtomicInteger(0);
     public final AtomicInteger failedTileCount = new AtomicInteger(0);
 
-    public Downloader(TileDB db, Region region, String tileUrl, int threadCount, File failedDownloadsFile) {
+    public Downloader(
+        TileDB db,
+        Region region,
+        String tileUrl,
+        Map<String, String> headers,
+        int threadCount,
+        File failsFile)
+    {
         this.db = db;
         this.region = region;
         this.tileUrl = tileUrl;
+        this.headers = headers;
         this.threadCount = threadCount;
 
         fails = null;
-        if (failedDownloadsFile != null) {
+        if (failsFile != null) {
             try {
-                fails = new FailedTiles(failedDownloadsFile);
+                fails = new FailedTiles(failsFile);
             } catch (JAXBException e) {
                 LOGGER.error(
                     "Failed to read {} for failed tile downloads",
-                    failedDownloadsFile.getName(),
+                    failsFile.getName(),
                     e
                 );
             }
         }
     }
 
-    public void start(int startZoom, int endZoom, boolean override) {
+    public void start(int startZoom, int endZoom, boolean override, boolean transcoding) {
         for (int zoom = startZoom; zoom <= endZoom; zoom++) {
             List<TilePosition> tiles = new ArrayList<>(findTilesInRegion(region, zoom));
             if (!override) {
@@ -116,6 +126,8 @@ public class Downloader {
                                 TileData tile = downloadTileWithRetries(
                                     pos,
                                     tileUrl,
+                                    headers,
+                                    transcoding,
                                     Constants.TILE_DOWNLOAD_ATTEMPTS,
                                     Constants.DOWNLOAD_RETRY_DELAY_MS
                                 );
@@ -146,7 +158,7 @@ public class Downloader {
         }
     }
 
-    public void repair() {
+    public void repair(boolean transcoding) {
         if (fails == null) {
             LOGGER.info("No fails file specified, canceling repair");
             return;
@@ -169,6 +181,8 @@ public class Downloader {
                     TileData tile = downloadTileWithRetries(
                         pos,
                         fail.url,
+                        headers,
+                        transcoding,
                         Constants.TILE_DOWNLOAD_ATTEMPTS,
                         Constants.DOWNLOAD_RETRY_DELAY_MS
                     );

@@ -6,10 +6,7 @@ import org.geotools.api.referencing.FactoryException;
 import org.geotools.api.referencing.crs.CoordinateReferenceSystem;
 import org.geotools.data.simple.SimpleFeatureIterator;
 import org.geotools.referencing.CRS;
-import org.locationtech.jts.geom.Geometry;
-import org.locationtech.jts.geom.GeometryFactory;
-import org.locationtech.jts.geom.MultiPolygon;
-import org.locationtech.jts.geom.Polygon;
+import org.locationtech.jts.geom.*;
 import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKTReader;
 import org.slf4j.Logger;
@@ -26,6 +23,35 @@ import java.util.Map;
 
 public record Region(MultiPolygon polygons) {
     private static final Logger LOGGER = LoggerFactory.getLogger(Region.class);
+
+    public static Region fromBBox(String bbox) throws InvalidRegionException, NumberFormatException {
+        String[] parts = bbox.split(",");
+        if (parts.length != 4) {
+            throw new InvalidRegionException("Invalid bounding box, format: bbox:west,south,east,north (latitude/longitude)");
+        }
+
+        double west  = Double.parseDouble(parts[0]);
+        double south = Double.parseDouble(parts[1]);
+        double east  = Double.parseDouble(parts[2]);
+        double north = Double.parseDouble(parts[3]);
+
+        GeometryFactory gf = new GeometryFactory();
+
+        Coordinate[] vertices = new Coordinate[]{
+            new Coordinate(west, south),
+            new Coordinate(west, north),
+            new Coordinate(east, north),
+            new Coordinate(east, south),
+            new Coordinate(west, south)
+        };
+        Polygon polygon = gf.createPolygon(vertices);
+        polygon.setSRID(4326);
+
+        MultiPolygon polygons = gf.createMultiPolygon(new Polygon[]{polygon});
+        polygons.setSRID(polygon.getSRID());
+
+        return new Region(polygons);
+    }
 
     public static Region fromWkt(String wkt) throws InvalidRegionException, ParseException {
         GeometryFactory gf = new GeometryFactory();
@@ -47,6 +73,7 @@ public record Region(MultiPolygon polygons) {
 
         Polygon[] polygonArray = polygonList.toArray(new Polygon[0]);
         MultiPolygon polygons = new MultiPolygon(polygonArray, gf);
+        polygons.setSRID(4326);
 
         return new Region(polygons);
     }
@@ -66,8 +93,16 @@ public record Region(MultiPolygon polygons) {
         return new Region(polygons);
     }
 
-    public static Region fromGeopackage(String geopackagePath, String layer) throws InvalidRegionException, IOException, FactoryException {
-        File file = new File(geopackagePath);
+    public static Region fromGeopackage(String geopackage) throws InvalidRegionException, IOException, FactoryException {
+        String[] geopackageParts = geopackage.split("@");
+        if (geopackageParts.length < 2) {
+            throw new InvalidRegionException("Invalid geopackage region string");
+        }
+
+        String layer = geopackageParts[0];
+        String path = geopackage.substring(geopackageParts[0].length() + 1);
+
+        File file = new File(path);
         if (!file.exists() || file.isDirectory()) {
             throw new InvalidRegionException("Geopackage does not exist");
         }
@@ -93,30 +128,12 @@ public record Region(MultiPolygon polygons) {
         }
 
         String data = regionString.substring(parts[0].length() + 1);
-
-        Type type = switch (parts[0]) {
-            case "wkt" -> Type.WKT;
-            case "shp" -> Type.SHAPEFILE;
-            case "gpkg" -> Type.GEOPACKAGE;
+        return switch (parts[0]) {
+            case "bbox" -> fromBBox(data);
+            case "wkt"  -> fromWkt(data);
+            case "shp"  -> fromShapefile(data);
+            case "gpkg" -> fromGeopackage(data);
             default -> throw new InvalidRegionException("Unknown region type for region string");
-        };
-
-        if (type.equals(Type.GEOPACKAGE)) {
-            String[] geopackageParts = data.split("@");
-            if (geopackageParts.length < 2) {
-                throw new InvalidRegionException("Invalid geopackage region string");
-            }
-
-            String layer = geopackageParts[0];
-            String path = data.substring(geopackageParts[0].length() + 1);
-
-            return fromGeopackage(path, layer);
-        }
-
-        return switch (type) {
-            case WKT -> fromWkt(data);
-            case SHAPEFILE -> fromShapefile(data);
-            default -> null;
         };
     }
 
@@ -154,13 +171,10 @@ public record Region(MultiPolygon polygons) {
         }
 
         Polygon[] polygonArray = polygonList.toArray(new Polygon[0]);
-        return new MultiPolygon(polygonArray, new GeometryFactory());
-    }
+        MultiPolygon polygons = new MultiPolygon(polygonArray, new GeometryFactory());
+        polygons.setSRID(4326);
 
-    public enum Type {
-        WKT,
-        SHAPEFILE,
-        GEOPACKAGE,
+        return polygons;
     }
 
     public static class InvalidRegionException extends RuntimeException {

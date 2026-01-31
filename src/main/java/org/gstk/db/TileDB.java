@@ -32,6 +32,9 @@ public interface TileDB {
         if (id.startsWith("mbtiles:")) {
             return new MBTilesDB(id.substring("mbtiles:".length()));
         }
+        if (id.startsWith("dir:")) {
+            return new DirectoryDB(id.substring("dir:".length()));
+        }
         throw new InitException("Invalid database identifier");
     }
 

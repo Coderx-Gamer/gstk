@@ -6,6 +6,23 @@ X.Y.Z
 - Y: Minor update
 - Z: Bug fix or small change
 
+## 3.2.0 - 2026-01-31
+### Added:
+- Support for directory output for tiles (dir/Z/X/Y)
+- Bounding box region type (bbox:west,south,east,north)
+- Rough approximation for --tile-count (omit --precise)
+- Option to skip tile image transcoding (--no-transcoding)
+- Option for custom HTTP headers (-H, --headers)
+- Ability to disable fails file (`-F -`)
+- Default user agent (User-Agent: GSTK <version>)
+
+### Changed:
+- Some tile count logs now have commas
+- MBTiles default zoom is set to a mean value of min and max zoom levels
+
+### Fixed:
+- Incorrect MBTiles metadata when writing to an existing file
+
 ## 3.1.2 - 2026-01-19
 ### Removed:
 - XML tag `<identifier>` from fails file

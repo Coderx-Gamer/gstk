@@ -133,15 +133,16 @@ public class GeoPackageDB implements TileDB {
 
     @Override
     public boolean doesTileExist(int column, int row, int zoom) throws SQLException {
-        String sql = "SELECT * FROM " + layer + " WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?";
+        String sql = "SELECT 1 FROM " + layer + " WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1";
 
         try (PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setInt(1, zoom);
             ps.setInt(2, column);
             ps.setInt(3, row);
 
-            ResultSet rs = ps.executeQuery();
-            return rs.next();
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 

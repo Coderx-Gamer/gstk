@@ -3,8 +3,7 @@ package org.gstk.db;
 import org.gstk.Region;
 import org.gstk.utils.ImageUtils;
 import org.gstk.utils.TileUtils;
-import org.locationtech.jts.geom.Coordinate;
-import org.locationtech.jts.geom.Envelope;
+import org.locationtech.jts.geom.*;
 
 import java.io.File;
 import java.sql.*;
@@ -90,18 +89,73 @@ public class MBTilesDB implements TileDB {
 
     @Override
     public void advancedInit(int startZoom, int endZoom, Region region) throws SQLException {
-        updateMetadata("minzoom", String.valueOf(startZoom));
-        updateMetadata("maxzoom", String.valueOf(endZoom));
+        String dbMinZoomStr = queryMetadata("minzoom");
+        int dbMinZoom = dbMinZoomStr != null ? Integer.parseInt(dbMinZoomStr) : startZoom;
 
-        Envelope envelope = region.polygons().getEnvelopeInternal();
+        String dbMaxZoomStr = queryMetadata("maxzoom");
+        int dbMaxZoom = dbMaxZoomStr != null ? Integer.parseInt(dbMaxZoomStr) : endZoom;
+
+        String dbBounds = queryMetadata("bounds");
+        Polygon dbBoundsPoly = null;
+        if (dbBounds != null) {
+            String[] parts = dbBounds.split(",");
+            if (parts.length != 4) {
+                throw new IllegalStateException("Invalid MBTiles bounds metadata");
+            }
+
+            double minLon = Double.parseDouble(parts[0]);
+            double minLat = Double.parseDouble(parts[1]);
+            double maxLon = Double.parseDouble(parts[2]);
+            double maxLat = Double.parseDouble(parts[3]);
+
+            if (minLon > maxLon || minLat > maxLat ||
+                minLon > 180.0  || minLon < -180.0 ||
+                minLat > 90.0   || minLat < -90.0  ||
+                maxLon > 180.0  || maxLon < -180.0 ||
+                maxLat > 90.0   || maxLat < -90.0)
+            {
+                throw new IllegalStateException("Invalid MBTiles bounds metadata");
+            }
+
+            Coordinate[] vertices = new Coordinate[]{
+                new Coordinate(minLon, minLat),
+                new Coordinate(minLon, maxLat),
+                new Coordinate(maxLon, maxLat),
+                new Coordinate(maxLon, minLat),
+                new Coordinate(minLon, minLat)
+            };
+            dbBoundsPoly = region.polygons().getFactory().createPolygon(vertices);
+        }
+
+        Geometry mergedGeom =
+            dbBoundsPoly == null
+            ? region.polygons()
+            : region.polygons().union(dbBoundsPoly);
+
+        Coordinate centroid = mergedGeom.getCentroid().getCoordinate();
+
+        Envelope envelope = mergedGeom.getEnvelopeInternal();
         double minLon = envelope.getMinX();
         double minLat = envelope.getMinY();
         double maxLon = envelope.getMaxX();
         double maxLat = envelope.getMaxY();
-        updateMetadata("bounds", minLon + "," + minLat + "," + maxLon + "," + maxLat);
 
-        Coordinate centroid = region.polygons().getCentroid().getCoordinate();
-        updateMetadata("center", centroid.x + "," + centroid.y + "," + startZoom);
+        conn.setAutoCommit(false);
+        try {
+            updateMetadata("minzoom", String.valueOf(Math.min(dbMinZoom, startZoom)));
+            updateMetadata("maxzoom", String.valueOf(Math.max(dbMaxZoom, endZoom)));
+            updateMetadata("bounds", minLon + "," + minLat + "," + maxLon + "," + maxLat);
+
+            int centerZoom = (Math.min(dbMinZoom, startZoom) + Math.max(dbMaxZoom, endZoom)) / 2;
+            updateMetadata("center", centroid.x + "," + centroid.y + "," + centerZoom);
+
+            conn.commit();
+        } catch (SQLException | RuntimeException e) {
+            conn.rollback();
+            throw e;
+        } finally {
+            conn.setAutoCommit(true);
+        }
     }
 
     @Override
@@ -132,7 +186,7 @@ public class MBTilesDB implements TileDB {
     public boolean doesTileExist(int column, int row, int zoom) throws SQLException {
         try (PreparedStatement ps = conn.prepareStatement(
             """
-            SELECT * FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ?
+            SELECT 1 FROM tiles WHERE zoom_level = ? AND tile_column = ? AND tile_row = ? LIMIT 1
             """))
         {
             ps.setInt(1, zoom);
@@ -141,8 +195,9 @@ public class MBTilesDB implements TileDB {
             int tmsRow = (1 << zoom) - 1 - row;
             ps.setInt(3, tmsRow);
 
-            ResultSet rs = ps.executeQuery();
-            return rs.next();
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
         }
     }
 
@@ -155,6 +210,20 @@ public class MBTilesDB implements TileDB {
             ps.setString(1, name);
             ps.setString(2, value);
             ps.executeUpdate();
+        }
+    }
+
+    private String queryMetadata(String name) throws SQLException {
+        try (PreparedStatement ps = conn.prepareStatement(
+            """
+            SELECT value FROM metadata WHERE name = ? LIMIT 1
+            """))
+        {
+            ps.setString(1, name);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next() ? rs.getString("value") : null;
+            }
         }
     }
 }

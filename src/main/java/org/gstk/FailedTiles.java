@@ -35,6 +35,7 @@ public class FailedTiles {
         fail.type = type.name;
         fail.url = url;
 
+        fails.fails.removeIf(f -> f.zoom == zoom && f.x == x && f.y == y);
         fails.fails.add(fail);
     }
 

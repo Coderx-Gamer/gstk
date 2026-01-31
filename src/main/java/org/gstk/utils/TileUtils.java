@@ -1,5 +1,6 @@
 package org.gstk.utils;
 
+import org.gstk.Constants;
 import org.gstk.Region;
 import org.locationtech.jts.geom.*;
 import org.slf4j.Logger;
@@ -11,6 +12,7 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -27,7 +29,7 @@ public class TileUtils {
             polygonArray[i] = (Polygon) polygons.getGeometryN(i);
         }
 
-        GeometryFactory gf = new GeometryFactory();
+        GeometryFactory gf = region.polygons().getFactory();
         for (Polygon polygon : polygonArray) {
             Polygon transformedPolygon = transformPolygon(polygon, gf, point -> {
                 TilePosition tile = latLonToTile(point.getY(), point.getX(), zoom);
@@ -39,13 +41,19 @@ public class TileUtils {
         return tiles;
     }
 
-    public static TileData downloadTileWithRetries(TilePosition tile, String url, int maxTries, int delayMs)
+    public static TileData downloadTileWithRetries(
+        TilePosition tile,
+        String url,
+        Map<String, String> headers,
+        boolean transcoding,
+        int maxTries,
+        int delayMs)
         throws IOException, InterruptedException
     {
         int tries = 0;
         while (tries < maxTries) {
             try {
-                return downloadTile(tile, url);
+                return downloadTile(tile, url, headers, transcoding);
             } catch (IOException e) {
                 if (++tries >= maxTries) {
                     throw e;
@@ -138,11 +146,26 @@ public class TileUtils {
         return new GeometryFactory().createPolygon(tileCoordinates);
     }
 
-    private static TileData downloadTile(TilePosition pos, String url) throws IOException {
+    private static TileData downloadTile(
+        TilePosition pos,
+        String url,
+        Map<String, String> headers,
+        boolean transcoding)
+        throws IOException
+    {
         HttpURLConnection connection = (HttpURLConnection) new URL(getTileUrl(pos, url)).openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(5000);
         connection.setReadTimeout(5000);
+
+        if (!headers.containsKey("User-Agent")) {
+            connection.setRequestProperty("User-Agent", "GSTK " + Constants.PROJECT_VERSION);
+        }
+
+        for (String key : headers.keySet()) {
+            connection.setRequestProperty(key, headers.get(key));
+        }
+
         connection.connect();
 
         if (connection.getResponseCode() != HttpURLConnection.HTTP_OK) {
@@ -159,12 +182,14 @@ public class TileUtils {
             byte[] data = out.toByteArray();
             connection.disconnect();
 
-            if (!ImageUtils.isPng(data)) {
-                byte[] pngData = ImageUtils.convertBytesToPng(data);
-                if (pngData != null) {
-                    data = pngData;
-                } else {
-                    LOGGER.warn("Unable to convert non-png tile at {} to png", pos);
+            if (transcoding) {
+                if (!ImageUtils.isPng(data)) {
+                    byte[] pngData = ImageUtils.convertBytesToPng(data);
+                    if (pngData != null) {
+                        data = pngData;
+                    } else {
+                        LOGGER.warn("Unable to convert non-png tile at {} to png", pos);
+                    }
                 }
             }
 

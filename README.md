@@ -1,13 +1,13 @@
 # GSTK (GIS Toolkit)
 
-GSTK is a lightweight Java CLI tool for downloading tiles from tile servers into a database. \
-The outputted database contains a raster tile table of the downloaded region.
+GSTK is a lightweight Java CLI tool for downloading tiles from tile servers into a database.
 
 This tool is useful for using maps offline (e.g., in remote areas, or where the internet is unreliable).
 
-Supported output databases:
-- GeoPackage (flag `--db gpkg:<table>@<file>`)
+Supported output formats:
+- GeoPackage (flag `--db gpkg:<layer>@<file>`)
 - MBTiles (flag `--db mbtiles:<file>`)
+- Directory (Z/X/Y) (flag `--db dir:<directory>`)
 
 ## Prerequisites
 
@@ -47,25 +47,30 @@ Options:
 Mutually exclusive:
   -d, --download      Download tiles to database
   -f, --fix           Re-download failed tile downloads
-  --tile-count        Calculate tile count in region
+  --tile-count        Estimate tile count in region
 
 Download (-d, --download) options:
-  -D  --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
-  -r, --region        Region polygon(s) (format: wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
-  -u, --url           Tile URL for tiles (must include {x}, {y}, and {z} as placeholders)
-  -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
-  -o, --override      Override existing tiles while downloading (default: false)
+  -D, --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>, dir:<directory>)
+  -r, --region        Region polygon(s) (format: bbox:<west>,<south>,<east>,<north>, wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
+  -u, --url           Tile URL to download from (must include {x}, {y}, and {z} as placeholders)
+  -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml) (set to "-" for no file)
+  -o, --override      Override existing tiles in database (default: false)
   -t, --threads       Thread count for multi-threaded downloading (default: 4)
+  -H, --headers       File with HTTP headers for requests (optional)
+  --no-transcoding    Disable image type conversion before storing (default: false)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)
 
 Fix (-f, --fix) options:
+  -D, --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>, dir:<directory>)
   -F, --fails-file    File to store failed tile downloads to (default: gstk_failed_tiles.xml)
-  -D, --db            Database to store tiles to (format: gpkg:<layer>@<file>, mbtiles:<file>)
+  -H, --headers       File with HTTP headers for requests (optional)
+  --no-transcoding    Disable image type conversion before storing (default: false)
 
 Tile count (--tile-count) options:
-  -r, --region        Region polygon(s) (format: wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
+  -p, --precise       Calculate the exact number of tiles (default: false)
+  -r, --region        Region polygon(s) (format: bbox:<west>,<south>,<east>,<north>, wkt:<string>, shp:<file>, gpkg:<layer>@<file>)
 
   -s, --start-zoom    Start zoom level (0-30 inclusive)
   -e, --end-zoom      End zoom level (0-30 inclusive)
@@ -108,9 +113,20 @@ java -jar gstk.jar \
   --db gpkg:los_angeles@los-angeles_0-17.gpkg
 ```
 
+With a bounding box (Colorado):
+```bash
+java -jar gstk.jar \
+  --download \
+  --region 'bbox:-109,37,-102,41' \
+  --url 'https://www.examplegis.com/tile/{z}/{x}/{y}' \
+  --start-zoom 0 \
+  --end-zoom 10 \
+  --db gpkg:colorado@colorado_0-10.gpkg
+```
+
 After you start downloading, you will see progress bars for each zoom level and an ETA for their download time.
 
-All inputted regions must use WGS 84 (latitude/longitude). \
+All input regions must use WGS 84 (latitude/longitude). \
 When using WKT, longitude comes before latitude, and the first coordinates in a polygon must match the last coordinates to form a closed line string.
 
 If you try to re-download the same region into a database you already downloaded into, it will say no tiles need to be downloaded. \
@@ -119,7 +135,10 @@ If you want to re-download the tiles, use the `--override` flag, and it will rep
 
 The `--url` flag follows this specification: <https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames>
 
-## Download Errors
+## Error Handling
+
+By default, if GSTK fails to download or write a tile, it will save a list of those failed attempts in `gstk_failed_tiles.xml`. \
+However, you can change `--fails-file` to change the path where it gets stored, and if `--fails-file` is set to `-`, it won't save fails anywhere.
 
 If while you're downloading into a database and one or more tiles fail to download, you can fix it by using the `--fix` option:
 ```bash
@@ -136,14 +155,18 @@ If you want to calculate the number of tiles that would be downloaded in a given
 without actually downloading it, you can use the `--tile-count` option:
 
 ```bash
+# Approximation
 java -jar gstk.jar --tile-count --start-zoom 0 --end-zoom 18 --region shp:los_angeles.shp
+
+# Exact
+java -jar gstk.jar --tile-count --start-zoom 0 --end-zoom 18 --region shp:los_angeles.shp --precise
 ```
 
-Note that if you're using a large region and high `--end-zoom`, this calculation could take a while.
+Note that if you're using `--precise`, the calculation could take a while.
 
 ## Updating
 
-To update the version before releasing a new build:
+Before releasing a new build:
 1. Update the `pom.xml` version (`<version>...</version>`).
 2. Check `mvn versions:display-dependency-updates` for dependency updates and update the code accordingly (don't use unstable updates).
 3. Check `mvn versions:display-plugin-updates` for plugin updates and update the POM (don't use unstable updates).
